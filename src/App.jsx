@@ -1,4 +1,4 @@
-// Revision 10
+// Version 1.0.1
 import { useState, useEffect } from "react";
 import { initializeApp } from "firebase/app";
 import {
@@ -7,15 +7,16 @@ import {
   query, orderBy, limit, where
 } from "firebase/firestore";
 
-// 🔥 PASTE YOUR FIREBASE CONFIG HERE
+// 🔥 Firebase config loaded from environment variables
+// Values are set in .env (local) and Vercel Environment Variables (production)
 const firebaseConfig = {
-  apiKey: "AIzaSyBCbWwMvhxvXzFKyJrQQ33Xq_U4XHYjJVc",
-  authDomain: "sb-code-tracker.firebaseapp.com",
-  projectId: "sb-code-tracker",
-  storageBucket: "sb-code-tracker.firebasestorage.app",
-  messagingSenderId: "225052562680",
-  appId: "1:225052562680:web:ec99e6caecfeffa6bfd70d",
-  measurementId: "G-LFS2CT8WNJ"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 const app = initializeApp(firebaseConfig);
@@ -26,7 +27,7 @@ const releaseHistRef = collection(db, "releaseHistory");
 
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 
-const ADMIN_PIN = "1234"; // CHANGE THIS
+const ADMIN_PIN = import.meta.env.VITE_ADMIN_PIN || "782945"; // CHANGE THIS or set VITE_ADMIN_PIN in .env
 const STATUS = { AVAILABLE: "available", TAKEN: "taken" };
 
 const styles = `
@@ -699,6 +700,7 @@ const styles = `
   .act-dot.take { background: var(--blue); }
   .act-dot.release { background: var(--orange); }
   .act-dot.delete, .act-dot.bulk { background: var(--red); }
+  .act-dot.export { background: #5ac8fa; }
   .act-text { font-size: 12px; color: var(--text-3); flex: 1; line-height: 1.4; }
   .act-text strong { color: var(--text); font-weight: 600; }
   .act-time { font-size: 10.5px; color: var(--text-4); font-family: var(--font-mono); white-space: nowrap; }
@@ -721,6 +723,35 @@ const styles = `
   }
   .btn-export-csv:hover { background: var(--green-mid); }
   .btn-export-csv:active { transform: scale(0.98); }
+
+  /* Masked code in table */
+  .t-code-masked {
+    font-size: 13.5px; font-weight: 600;
+    color: var(--text-4); letter-spacing: 0.1px;
+    font-family: var(--font-mono);
+  }
+
+  /* Code reveal screen inside Take modal */
+  .reveal-screen {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 6px; padding: 8px 0 4px;
+    animation: modalIn 0.26s var(--ease-spring);
+  }
+  .reveal-icon { font-size: 32px; margin-bottom: 4px; }
+  .reveal-label {
+    font-size: 11px; font-weight: 600; color: var(--text-4);
+    text-transform: uppercase; letter-spacing: 0.7px;
+  }
+  .reveal-code {
+    font-family: var(--font-mono); font-size: 28px; font-weight: 700;
+    color: var(--green-dark); letter-spacing: 2px;
+    background: var(--green-light); border: 2px solid var(--green-mid);
+    border-radius: var(--r-lg); padding: 18px 28px; margin: 6px 0;
+    text-align: center; width: 100%; word-break: break-all;
+  }
+  .reveal-sub {
+    font-size: 13px; color: var(--text-3); margin-bottom: 10px;
+  }
 
   /* Mobile info block — hidden on desktop */
   .t-mobile-info { display: none; }
@@ -753,7 +784,6 @@ export default function App() {
   const [codes, setCodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("available");
-  const [filterKey, setFilterKey] = useState(0);
   const [search, setSearch] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [optimistic, setOptimistic] = useState({});
@@ -775,20 +805,21 @@ export default function App() {
   const [selectedCodes, setSelectedCodes] = useState(new Set());
   const [bulkDelConfirm, setBulkDelConfirm] = useState(false);
 
-  // Release history — synced from Firebase
+  // Release history — synced from Firebase (lazy: only when Code Manager is open)
   const [releaseHistory, setReleaseHistory] = useState([]);
 
-  // Activity log — synced from Firebase
+  // Activity log — synced from Firebase (lazy: only when Code Manager is open)
   const [actLog, setActLog] = useState([]);
 
-  // Write a log entry to Firestore (plain string only — no JSX)
+  // Revealed code after successful Take (Fix #11)
+  const [revealedCode, setRevealedCode] = useState(null);
+
+  // Write a log entry to Firestore only — onSnapshot keeps local state in sync (Fix #3)
   const log = (type, text) => {
-    const entry = { type, text, ts: Date.now(), id: Math.random() };
-    setActLog(p => [entry, ...p].slice(0, 200));
     addDoc(logsRef, { type, text, ts: Date.now() }).catch(() => {});
   };
 
-  // Firebase real-time listener — codes
+  // Firebase real-time listener — codes (always on)
   useEffect(() => {
     const unsub = onSnapshot(codesRef, snap => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -799,8 +830,9 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // Firebase real-time listener — activity log (last 200, past 30 days)
+  // Firebase real-time listener — activity log (lazy: only when Code Manager open) (Fix #7)
   useEffect(() => {
+    if (!codeManager) return;
     const cutoff = Date.now() - MONTH_MS;
     const q = query(logsRef, where("ts", ">", cutoff), orderBy("ts", "desc"), limit(200));
     const unsub = onSnapshot(q, snap => {
@@ -808,10 +840,11 @@ export default function App() {
       setActLog(data);
     });
     return () => unsub();
-  }, []);
+  }, [codeManager]);
 
-  // Firebase real-time listener — release history (last 200, past 30 days)
+  // Firebase real-time listener — release history (lazy: only when Code Manager open) (Fix #7)
   useEffect(() => {
+    if (!codeManager) return;
     const cutoff = Date.now() - MONTH_MS;
     const q = query(releaseHistRef, where("releasedAt", ">", cutoff), orderBy("releasedAt", "desc"), limit(200));
     const unsub = onSnapshot(q, snap => {
@@ -819,7 +852,7 @@ export default function App() {
       setReleaseHistory(data);
     });
     return () => unsub();
-  }, []);
+  }, [codeManager]);
 
   // ── Actions ──
   const handlePin = () => {
@@ -850,7 +883,9 @@ export default function App() {
   const takeCode = async (id, name) => {
     const code = takeModal?.code;
     setOptimistic(p => ({ ...p, [id]: { status: STATUS.TAKEN, takenBy: name, takenAt: Date.now() } }));
-    setTakeModal(null); setStaffName("");
+    setStaffName("");
+    // Show the reveal screen with the full code (Fix #11)
+    setRevealedCode({ code, name });
     log("take", `${name} took ${code}`);
     try {
       await updateDoc(doc(db, "codes", id), { status: STATUS.TAKEN, takenBy: name, takenAt: Date.now() });
@@ -889,7 +924,8 @@ export default function App() {
   const bulkDelete = async () => {
     const ids = [...selectedCodes];
     const names = codes.filter(c => ids.includes(c.id)).map(c => c.code);
-    log("bulk", `Deleted ${ids.length} code(s): ${names.join(", ")}`);
+    const preview = names.slice(0, 5).join(", ") + (names.length > 5 ? ` +${names.length - 5} more` : "");
+    log("bulk", `Deleted ${ids.length} code(s): ${preview}`);
     setSelectedCodes(new Set());
     setBulkDelConfirm(false);
     await Promise.all(ids.map(id => deleteDoc(doc(db, "codes", id))));
@@ -933,7 +969,7 @@ export default function App() {
     a.download = `codes-export-${new Date().toISOString().slice(0,10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    log("add", `CSV exported — ${codes.length} codes`);
+    log("export", `CSV exported — ${codes.length} codes`);
   };
 
   // Merge optimistic
@@ -1031,7 +1067,7 @@ export default function App() {
           <div className="toolbar">
             <div className="seg-ctrl">
               {[{ k: "available", l: "Available" }, { k: "taken", l: "Taken" }, { k: "all", l: "All" }].map(f => (
-                <button key={f.k} className={`seg ${filter === f.k ? "active" : ""}`} onClick={() => { setFilter(f.k); setFilterKey(x => x + 1); }}>{f.l}</button>
+                <button key={f.k} className={`seg ${filter === f.k ? "active" : ""}`} onClick={() => { setFilter(f.k); }}>{f.l}</button>
               ))}
             </div>
             <div className="search-box">
@@ -1084,12 +1120,16 @@ export default function App() {
                 </div>
               )}
               {!loading && filtered.length > 0 && (
-                <div className="t-body-inner" key={filterKey}>
+                <div className="t-body-inner" key={filter}>
                   {filtered.map((c, i) => (
                     <div key={c.id} className={`t-row ${c.status === STATUS.TAKEN ? "is-taken" : ""} ${c._opt ? "is-optimistic" : ""}`}
                       style={{ animationDelay: `${Math.min(i * 22, 220)}ms` }}>
                       <span className="t-num">{i + 1}</span>
-                      <span className="t-code">{c.code}</span>
+                      {/* Fix #11: Mask available codes — only reveal after Take flow */}
+                      {c.status === STATUS.AVAILABLE && !isAdmin
+                        ? <span className="t-code-masked">{c.code.slice(0, Math.max(2, c.code.length - 2)).replace(/[A-Z0-9]/g, (ch, idx) => idx < 2 ? ch : "•") + "••"}</span>
+                        : <span className="t-code">{c.code}</span>
+                      }
                       <span className="t-staff t-desktop-only">{c.takenBy || ""}</span>
                       <span className="t-time t-desktop-only">{c.takenAt ? formatTime(c.takenAt) : ""}</span>
                       <div className="t-mobile-info">
@@ -1135,26 +1175,42 @@ export default function App() {
       )}
 
       {/* ── TAKE MODAL ── */}
-      {takeModal && (
-        <div className="overlay" onClick={() => { setTakeModal(null); setStaffName(""); }}>
+      {(takeModal || revealedCode) && (
+        <div className="overlay" onClick={() => { setTakeModal(null); setStaffName(""); setRevealedCode(null); }}>
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="m-head">
-              <div className="m-title">Take Code</div>
-              <div className="m-sub">Enter your name to claim this code.</div>
-            </div>
-            <div className="code-chip">{takeModal.code}</div>
-            <label className="f-label">Your Name</label>
-            <input className="f-input" type="text" placeholder="e.g. Kimtong, Sothea, Hongsrun…"
-              value={staffName} onChange={e => setStaffName(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && staffName.trim() && takeCode(takeModal.id, staffName.trim())}
-              autoFocus />
-            <div className="m-actions">
-              <button className="btn-sec" onClick={() => { setTakeModal(null); setStaffName(""); }}>Cancel</button>
-              <button className="btn-pri green" disabled={!staffName.trim()}
-                onClick={() => staffName.trim() && takeCode(takeModal.id, staffName.trim())}>
-                Confirm
-              </button>
-            </div>
+            {revealedCode ? (
+              /* Reveal screen — shown after successful Take (Fix #11) */
+              <div className="reveal-screen">
+                <div className="reveal-icon">🎉</div>
+                <div className="reveal-label">Your Code</div>
+                <div className="reveal-code">{revealedCode.code}</div>
+                <div className="reveal-sub">Assigned to <strong>{revealedCode.name}</strong> — screenshot or note this down!</div>
+                <div className="m-actions" style={{ width: "100%" }}>
+                  <button className="btn-pri green" onClick={() => { setTakeModal(null); setRevealedCode(null); }}>Done</button>
+                </div>
+              </div>
+            ) : (
+              /* Name entry form */
+              <>
+                <div className="m-head">
+                  <div className="m-title">Take Code</div>
+                  <div className="m-sub">Enter your name to claim this code.</div>
+                </div>
+                <div className="code-chip">🔒 Reveal on confirm</div>
+                <label className="f-label">Your Name</label>
+                <input className="f-input" type="text" placeholder="e.g. Kimtong, Sothea, Hongsrun…"
+                  value={staffName} onChange={e => setStaffName(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && staffName.trim() && takeCode(takeModal.id, staffName.trim())}
+                  autoFocus />
+                <div className="m-actions">
+                  <button className="btn-sec" onClick={() => { setTakeModal(null); setStaffName(""); }}>Cancel</button>
+                  <button className="btn-pri green" disabled={!staffName.trim()}
+                    onClick={() => staffName.trim() && takeCode(takeModal.id, staffName.trim())}>
+                    Confirm & Reveal
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1290,16 +1346,23 @@ export default function App() {
                 ? <div className="act-empty">No releases in the past 30 days.</div>
                 : (
                   <div className="act-log">
-                    {releaseHistory.map(r => (
-                      <div key={r.id} className="act-item">
-                        <span className="act-dot release"></span>
-                        <span className="act-text">
-                          <strong>{r.code}</strong> — held by <strong>{r.takenBy}</strong>
-                          {r.takenAt && ` · took ${formatTime(r.takenAt)}`}
-                        </span>
-                        <span className="act-time">{formatTimeShort(r.releasedAt)}</span>
-                      </div>
-                    ))}
+                    {releaseHistory.map(r => {
+                        const durMs = r.takenAt ? r.releasedAt - r.takenAt : null;
+                        const durH = durMs ? Math.floor(durMs / (1000 * 60 * 60)) : 0;
+                        const durM = durMs ? Math.floor((durMs % (1000 * 60 * 60)) / (1000 * 60)) : 0;
+                        const durStr = durMs ? (durH > 0 ? ` · held ${durH}h ${durM}m` : ` · held ${durM}m`) : "";
+                        return (
+                          <div key={r.id} className="act-item">
+                            <span className="act-dot release"></span>
+                            <span className="act-text">
+                              <strong>{r.code}</strong> — held by <strong>{r.takenBy}</strong>
+                              {r.takenAt && ` · took ${formatTime(r.takenAt)}`}
+                              {durStr}
+                            </span>
+                            <span className="act-time">{formatTimeShort(r.releasedAt)}</span>
+                          </div>
+                        );
+                      })}
                   </div>
                 )
               }
