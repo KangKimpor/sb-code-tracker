@@ -1,10 +1,11 @@
-// Version 1.0.1
+// Version 1.0.3
 import { useState, useEffect } from "react";
 import { initializeApp } from "firebase/app";
 import {
   getFirestore, collection, onSnapshot,
   addDoc, updateDoc, deleteDoc, doc,
-  query, orderBy, limit, where
+  query, orderBy, limit, where,
+  serverTimestamp, runTransaction, getDocs, writeBatch
 } from "firebase/firestore";
 
 // 🔥 Firebase config loaded from environment variables
@@ -724,6 +725,17 @@ const styles = `
   .btn-export-csv:hover { background: var(--green-mid); }
   .btn-export-csv:active { transform: scale(0.98); }
 
+  /* Clear Old Logs button */
+  .btn-clear-logs {
+    width: 100%; display: flex; align-items: center; justify-content: center; gap: 7px;
+    background: rgba(255, 159, 64, 0.12); border: 1px solid rgba(255, 159, 64, 0.2);
+    border-radius: var(--r-sm); font-family: var(--font);
+    font-size: 13px; font-weight: 600; color: #c97a00;
+    padding: 10px; cursor: pointer; transition: all 0.15s; margin-top: 8px;
+  }
+  .btn-clear-logs:hover { background: rgba(255, 159, 64, 0.2); border-color: rgba(255, 159, 64, 0.35); }
+  .btn-clear-logs:active { transform: scale(0.98); }
+
   /* Masked code in table */
   .t-code-masked {
     font-size: 13.5px; font-weight: 600;
@@ -768,16 +780,26 @@ const styles = `
   }
 `;
 
+// Handles both plain ms numbers (from optimistic state) and Firestore Timestamp objects (from onSnapshot)
+function toMs(ts) {
+  if (!ts) return null;
+  if (typeof ts.toMillis === "function") return ts.toMillis(); // Firestore Timestamp
+  if (typeof ts === "number") return ts;
+  return Number(ts);
+}
+
 function formatTime(ts) {
-  if (!ts) return "";
-  const d = new Date(ts);
+  const ms = toMs(ts);
+  if (!ms) return "";
+  const d = new Date(ms);
   return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) +
     " " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
 function formatTimeShort(ts) {
-  if (!ts) return "";
-  return new Date(ts).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const ms = toMs(ts);
+  if (!ms) return "";
+  return new Date(ms).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 export default function App() {
@@ -795,6 +817,7 @@ export default function App() {
 
   const [takeModal, setTakeModal] = useState(null);
   const [staffName, setStaffName] = useState("");
+  const [takeError, setTakeError] = useState("");
 
   const [releaseConfirm, setReleaseConfirm] = useState(null);
   const [codeManager, setCodeManager] = useState(false);
@@ -882,29 +905,51 @@ export default function App() {
 
   const takeCode = async (id, name) => {
     const code = takeModal?.code;
+    // Optimistic update for instant UI feedback
     setOptimistic(p => ({ ...p, [id]: { status: STATUS.TAKEN, takenBy: name, takenAt: Date.now() } }));
     setStaffName("");
-    // Show the reveal screen with the full code (Fix #11)
+    setTakeError("");
+    // Show reveal screen immediately (optimistic)
     setRevealedCode({ code, name });
     log("take", `${name} took ${code}`);
     try {
-      await updateDoc(doc(db, "codes", id), { status: STATUS.TAKEN, takenBy: name, takenAt: Date.now() });
-    } finally {
+      // FIX #6: Transaction ensures the code is still available before writing.
+      // If two users tap Take at the same time, only one wins — the other sees an error.
+      await runTransaction(db, async (tx) => {
+        const ref = doc(db, "codes", id);
+        const snap = await tx.get(ref);
+        if (!snap.exists() || snap.data().status !== STATUS.AVAILABLE) {
+          throw new Error("already_taken");
+        }
+        // FIX #7: serverTimestamp() writes the server's authoritative time, not the client clock
+        tx.update(ref, { status: STATUS.TAKEN, takenBy: name, takenAt: serverTimestamp() });
+      });
+    } catch (err) {
+      // Rollback: hide reveal screen and show error
+      setRevealedCode(null);
       setOptimistic(p => { const n = { ...p }; delete n[id]; return n; });
+      if (err.message === "already_taken") {
+        setTakeError("Sorry — this code was just taken by someone else. Please choose another.");
+      } else {
+        setTakeError("Something went wrong. Please try again.");
+      }
+      return;
     }
+    // Clean up optimistic state — onSnapshot will sync the real data
+    setOptimistic(p => { const n = { ...p }; delete n[id]; return n; });
   };
 
   const releaseCode = async (id) => {
     const code = releaseConfirm?.code;
     const by = releaseConfirm?.takenBy;
     const takenAt = releaseConfirm?.takenAt;
-    const releasedAt = Date.now();
     setOptimistic(p => ({ ...p, [id]: { status: STATUS.AVAILABLE, takenBy: null, takenAt: null } }));
     setReleaseConfirm(null);
     log("release", `Released ${code}${by ? ` from ${by}` : ""}`);
     if (code) {
+      // FIX #7: serverTimestamp() for releasedAt — authoritative server time
       addDoc(releaseHistRef, {
-        code, takenBy: by || "—", takenAt: takenAt || null, releasedAt
+        code, takenBy: by || "—", takenAt: takenAt || null, releasedAt: serverTimestamp()
       }).catch(() => {});
     }
     try {
@@ -936,6 +981,24 @@ export default function App() {
   const selAvail = () => setSelectedCodes(new Set(codes.filter(c => c.status === STATUS.AVAILABLE).map(c => c.id)));
   const selTaken = () => setSelectedCodes(new Set(codes.filter(c => c.status === STATUS.TAKEN).map(c => c.id)));
   const selNone = () => setSelectedCodes(new Set());
+
+  const clearOldLogs = async () => {
+    if (!confirm("Delete all activity logs older than 30 days? This cannot be undone.")) return;
+    const cutoff = Date.now() - MONTH_MS;
+    try {
+      const q = query(logsRef, where("ts", "<", cutoff));
+      const snap = await getDocs(q);
+      const batch = writeBatch(db);
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      const count = snap.docs.length;
+      log("delete", `Cleared ${count} old log entry(ies) — older than 30 days`);
+      alert(`✓ Deleted ${count} old log entries.`);
+    } catch (err) {
+      console.error("Clear logs failed:", err);
+      alert("Failed to clear logs. Try again.");
+    }
+  };
 
   const exportCSV = () => {
     const rows = [["Code", "Status", "Taken By", "Taken At", "Released At"]];
@@ -1176,7 +1239,7 @@ export default function App() {
 
       {/* ── TAKE MODAL ── */}
       {(takeModal || revealedCode) && (
-        <div className="overlay" onClick={() => { setTakeModal(null); setStaffName(""); setRevealedCode(null); }}>
+        <div className="overlay" onClick={() => { setTakeModal(null); setStaffName(""); setRevealedCode(null); setTakeError(""); }}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             {revealedCode ? (
               /* Reveal screen — shown after successful Take (Fix #11) */
@@ -1202,8 +1265,13 @@ export default function App() {
                   value={staffName} onChange={e => setStaffName(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && staffName.trim() && takeCode(takeModal.id, staffName.trim())}
                   autoFocus />
+                {takeError && (
+                  <div style={{ fontSize: 12.5, color: "var(--red)", background: "var(--red-light)", border: "1px solid var(--red-mid)", borderRadius: "var(--r-xs)", padding: "8px 12px", marginTop: 4 }}>
+                    {takeError}
+                  </div>
+                )}
                 <div className="m-actions">
-                  <button className="btn-sec" onClick={() => { setTakeModal(null); setStaffName(""); }}>Cancel</button>
+                  <button className="btn-sec" onClick={() => { setTakeModal(null); setStaffName(""); setTakeError(""); }}>Cancel</button>
                   <button className="btn-pri green" disabled={!staffName.trim()}
                     onClick={() => staffName.trim() && takeCode(takeModal.id, staffName.trim())}>
                     Confirm & Reveal
@@ -1347,7 +1415,7 @@ export default function App() {
                 : (
                   <div className="act-log">
                     {releaseHistory.map(r => {
-                        const durMs = r.takenAt ? r.releasedAt - r.takenAt : null;
+                        const durMs = r.takenAt ? toMs(r.releasedAt) - toMs(r.takenAt) : null;
                         const durH = durMs ? Math.floor(durMs / (1000 * 60 * 60)) : 0;
                         const durM = durMs ? Math.floor((durMs % (1000 * 60 * 60)) / (1000 * 60)) : 0;
                         const durStr = durMs ? (durH > 0 ? ` · held ${durH}h ${durM}m` : ` · held ${durM}m`) : "";
@@ -1375,6 +1443,14 @@ export default function App() {
                 <path d="M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
               </svg>
               Export CSV
+            </button>
+
+            {/* Clear Old Logs */}
+            <button className="btn-clear-logs" onClick={clearOldLogs}>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                <path d="M2 4h12M6.5 7v5M9.5 7v5M3 4l1 10a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-10M7 4V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              Clear Old Logs (30d+)
             </button>
 
             <button className="btn-sec" style={{ width: "100%", padding: 11, borderRadius: "var(--r-sm)", marginTop: 8 }}
