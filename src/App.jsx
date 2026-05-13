@@ -1,5 +1,6 @@
 // Version 1.0.3
 import { useState, useEffect } from "react";
+import { Analytics } from "@vercel/analytics/react";
 import { initializeApp } from "firebase/app";
 import {
   getFirestore, collection, onSnapshot,
@@ -1484,6 +1485,7 @@ export default function App() {
           </div>
         </div>
       )}
+      <Analytics />
     </>
   );
 }
