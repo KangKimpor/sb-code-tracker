@@ -499,7 +499,7 @@ const styles = `
     color: var(--green-dark);
     letter-spacing: 1.5px;
     margin-bottom: 18px;
-    word-break: break-all;
+    white-space: nowrap;
   }
 
   /* Release confirm */
@@ -1260,7 +1260,7 @@ export default function App() {
                   <div className="m-title">Take Code</div>
                   <div className="m-sub">Enter your name to claim this code.</div>
                 </div>
-                <div className="code-chip">🔒 Reveal on confirm</div>
+                <div className="code-chip">Reveal on confirm</div>
                 <label className="f-label">Your Name</label>
                 <input className="f-input" type="text" placeholder="e.g. Kimtong, Sothea, Hongsrun…"
                   value={staffName} onChange={e => setStaffName(e.target.value)}
