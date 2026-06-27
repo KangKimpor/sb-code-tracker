@@ -765,6 +765,11 @@ const styles = `
   .reveal-sub {
     font-size: 13px; color: var(--text-3); margin-bottom: 10px;
   }
+  .btn-copy { flex: 1; transition: background 0.15s, color 0.15s; }
+  .btn-copy.copied {
+    background: var(--green-light); color: var(--green-dark);
+    border-color: var(--green-mid);
+  }
 
   /* Mobile info block — hidden on desktop */
   .t-mobile-info { display: none; }
@@ -837,6 +842,31 @@ export default function App() {
 
   // Revealed code after successful Take (Fix #11)
   const [revealedCode, setRevealedCode] = useState(null);
+
+  // Copy-to-clipboard feedback on reveal screen (Fix #12)
+  const [copied, setCopied] = useState(false);
+
+  const copyRevealedCode = async (code) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(code);
+      } else {
+        // Fallback for older/in-app browsers without Clipboard API
+        const ta = document.createElement("textarea");
+        ta.value = code;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard write blocked (rare) — fail silently, code is still visible on screen
+    }
+  };
 
   // Write a log entry to Firestore only — onSnapshot keeps local state in sync (Fix #3)
   const log = (type, text) => {
@@ -1240,7 +1270,7 @@ export default function App() {
 
       {/* ── TAKE MODAL ── */}
       {(takeModal || revealedCode) && (
-        <div className="overlay" onClick={() => { setTakeModal(null); setStaffName(""); setRevealedCode(null); setTakeError(""); }}>
+        <div className="overlay" onClick={() => { setTakeModal(null); setStaffName(""); setRevealedCode(null); setTakeError(""); setCopied(false); }}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             {revealedCode ? (
               /* Reveal screen — shown after successful Take (Fix #11) */
@@ -1250,7 +1280,13 @@ export default function App() {
                 <div className="reveal-code">{revealedCode.code}</div>
                 <div className="reveal-sub">Assigned to <strong>{revealedCode.name}</strong> — screenshot or note this down!</div>
                 <div className="m-actions" style={{ width: "100%" }}>
-                  <button className="btn-pri green" onClick={() => { setTakeModal(null); setRevealedCode(null); }}>Done</button>
+                  <button
+                    className={`btn-sec btn-copy${copied ? " copied" : ""}`}
+                    onClick={() => copyRevealedCode(revealedCode.code)}
+                  >
+                    {copied ? "Copied ✓" : "Copy Code"}
+                  </button>
+                  <button className="btn-pri green" onClick={() => { setTakeModal(null); setRevealedCode(null); setCopied(false); }}>Done</button>
                 </div>
               </div>
             ) : (
