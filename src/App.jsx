@@ -107,6 +107,15 @@ const styles = `
 
   .topbar-left { display: flex; align-items: center; gap: 10px; }
 
+  .conn-banner {
+    background: var(--red-light); color: var(--red); border-bottom: 1px solid var(--red-mid);
+    padding: 8px 24px; font-size: 13px; text-align: center;
+  }
+  .conn-banner button {
+    margin-left: 10px; background: none; border: 1px solid var(--red); color: var(--red);
+    border-radius: var(--r-xs); padding: 2px 10px; font-size: 12.5px; cursor: pointer;
+  }
+
   .logo-wrap {
     position: relative;
     width: 32px; height: 32px;
@@ -117,6 +126,8 @@ const styles = `
     box-shadow: var(--sh-sm);
     flex-shrink: 0;
     cursor: pointer;
+    padding: 0;
+    font: inherit;
     transition: transform 0.18s var(--ease-spring), opacity 0.15s;
     -webkit-tap-highlight-color: transparent;
   }
@@ -543,6 +554,10 @@ const styles = `
   }
   .pin-inp:focus { border-color: var(--blue); background: var(--surface); box-shadow: 0 0 0 3px var(--blue-light); }
   .pin-err { font-size: 12px; font-weight: 500; color: var(--red); text-align: center; height: 18px; }
+  .take-error {
+    font-size: 12.5px; color: var(--red); background: var(--red-light);
+    border: 1px solid var(--red-mid); border-radius: var(--r-xs); padding: 8px 12px; margin-top: 4px;
+  }
 
   /* Modal actions */
   .m-actions { display: flex; gap: 8px; margin-top: 18px; }
@@ -808,9 +823,16 @@ function formatTimeShort(ts) {
   return new Date(ms).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+// Prevents spreadsheet formula injection when CSV is opened in Excel/Sheets
+function csvSafe(v) {
+  const s = String(v);
+  return /^[=+\-@]/.test(s) ? `'${s}` : s;
+}
+
 export default function App() {
   const [codes, setCodes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [connError, setConnError] = useState(false);
   const [filter, setFilter] = useState("available");
   const [search, setSearch] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
@@ -873,6 +895,20 @@ export default function App() {
     addDoc(logsRef, { type, text, ts: Date.now() }).catch(() => {});
   };
 
+  // Escape closes whichever modal is open
+  useEffect(() => {
+    const onKey = e => {
+      if (e.key !== "Escape") return;
+      if (bulkDelConfirm) setBulkDelConfirm(false);
+      else if (codeManager) { setCodeManager(false); setSelectedCodes(new Set()); }
+      else if (releaseConfirm) setReleaseConfirm(null);
+      else if (takeModal) { setTakeModal(null); setStaffName(""); setRevealedCode(null); setTakeError(""); setCopied(false); }
+      else if (pinModal) { setPinModal(false); setPin(""); setPinError(""); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [bulkDelConfirm, codeManager, releaseConfirm, takeModal, pinModal]);
+
   // Firebase real-time listener — codes (always on)
   useEffect(() => {
     const unsub = onSnapshot(codesRef, snap => {
@@ -880,6 +916,12 @@ export default function App() {
       data.sort((a, b) => a.createdAt - b.createdAt);
       setCodes(data);
       setLoading(false);
+      setConnError(false);
+    }, err => {
+      // ponytail: keep last-good codes on screen; surface a banner instead of an infinite "Connecting..." spinner
+      console.error("codes listener failed:", err);
+      setLoading(false);
+      setConnError(true);
     });
     return () => unsub();
   }, []);
@@ -892,7 +934,7 @@ export default function App() {
     const unsub = onSnapshot(q, snap => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setActLog(data);
-    });
+    }, err => console.error("activity log listener failed:", err));
     return () => unsub();
   }, [codeManager]);
 
@@ -904,7 +946,7 @@ export default function App() {
     const unsub = onSnapshot(q, snap => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setReleaseHistory(data);
-    });
+    }, err => console.error("release history listener failed:", err));
     return () => unsub();
   }, [codeManager]);
 
@@ -918,20 +960,20 @@ export default function App() {
     const t = newCode.trim().toUpperCase();
     if (!t || codes.some(c => c.code === t)) { setNewCode(""); return; }
     setNewCode("");
-    log("add", `${t} added`);
     await addDoc(codesRef, { code: t, status: STATUS.AVAILABLE, takenBy: null, takenAt: null, createdAt: Date.now() });
+    log("add", `${t} added`);
   };
 
   const addBulk = async () => {
     const lines = bulkText.split(/[\n,]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
     const existing = new Set(codes.map(c => c.code));
-    const toAdd = lines.filter(c => !existing.has(c));
+    const toAdd = [...new Set(lines)].filter(c => !existing.has(c));
     if (!toAdd.length) { setBulkText(""); return; }
     setBulkText("");
-    log("bulk", `${toAdd.length} code(s) bulk-added`);
     await Promise.all(toAdd.map((code, i) =>
       addDoc(codesRef, { code, status: STATUS.AVAILABLE, takenBy: null, takenAt: null, createdAt: Date.now() + i })
     ));
+    log("bulk", `${toAdd.length} code(s) bulk-added`);
   };
 
   const takeCode = async (id, name) => {
@@ -942,7 +984,6 @@ export default function App() {
     setTakeError("");
     // Show reveal screen immediately (optimistic)
     setRevealedCode({ code, name });
-    log("take", `${name} took ${code}`);
     try {
       // FIX #6: Transaction ensures the code is still available before writing.
       // If two users tap Take at the same time, only one wins — the other sees an error.
@@ -968,6 +1009,7 @@ export default function App() {
     }
     // Clean up optimistic state — onSnapshot will sync the real data
     setOptimistic(p => { const n = { ...p }; delete n[id]; return n; });
+    log("take", `${name} took ${code}`);
   };
 
   const releaseCode = async (id) => {
@@ -976,7 +1018,6 @@ export default function App() {
     const takenAt = releaseConfirm?.takenAt;
     setOptimistic(p => ({ ...p, [id]: { status: STATUS.AVAILABLE, takenBy: null, takenAt: null } }));
     setReleaseConfirm(null);
-    log("release", `Released ${code}${by ? ` from ${by}` : ""}`);
     if (code) {
       // FIX #7: serverTimestamp() for releasedAt — authoritative server time
       addDoc(releaseHistRef, {
@@ -985,6 +1026,7 @@ export default function App() {
     }
     try {
       await updateDoc(doc(db, "codes", id), { status: STATUS.AVAILABLE, takenBy: null, takenAt: null });
+      log("release", `Released ${code}${by ? ` from ${by}` : ""}`);
     } finally {
       setOptimistic(p => { const n = { ...p }; delete n[id]; return n; });
     }
@@ -992,19 +1034,19 @@ export default function App() {
 
   const deleteCode = async (id) => {
     const c = codes.find(x => x.id === id);
-    if (c) log("delete", `Deleted ${c.code}`);
     setSelectedCodes(p => { const n = new Set(p); n.delete(id); return n; });
     await deleteDoc(doc(db, "codes", id));
+    if (c) log("delete", `Deleted ${c.code}`);
   };
 
   const bulkDelete = async () => {
     const ids = [...selectedCodes];
     const names = codes.filter(c => ids.includes(c.id)).map(c => c.code);
     const preview = names.slice(0, 5).join(", ") + (names.length > 5 ? ` +${names.length - 5} more` : "");
-    log("bulk", `Deleted ${ids.length} code(s): ${preview}`);
     setSelectedCodes(new Set());
     setBulkDelConfirm(false);
     await Promise.all(ids.map(id => deleteDoc(doc(db, "codes", id))));
+    log("bulk", `Deleted ${ids.length} code(s): ${preview}`);
   };
 
   const toggleSel = id => setSelectedCodes(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -1035,10 +1077,10 @@ export default function App() {
     const rows = [["Code", "Status", "Taken By", "Taken At", "Released At"]];
     codes.forEach(c => {
       rows.push([
-        c.code,
+        csvSafe(c.code),
         c.status,
-        c.takenBy || "",
-        c.takenAt ? new Date(c.takenAt).toISOString() : "",
+        csvSafe(c.takenBy || ""),
+        toMs(c.takenAt) ? new Date(toMs(c.takenAt)).toISOString() : "",
         ""
       ]);
     });
@@ -1048,10 +1090,10 @@ export default function App() {
       rows.push(["Code", "Taken By", "Taken At", "Released At"]);
       releaseHistory.forEach(r => {
         rows.push([
-          r.code,
-          r.takenBy,
-          r.takenAt ? new Date(r.takenAt).toISOString() : "",
-          new Date(r.releasedAt).toISOString()
+          csvSafe(r.code),
+          csvSafe(r.takenBy),
+          toMs(r.takenAt) ? new Date(toMs(r.takenAt)).toISOString() : "",
+          toMs(r.releasedAt) ? new Date(toMs(r.releasedAt)).toISOString() : ""
         ]);
       });
     }
@@ -1070,7 +1112,7 @@ export default function App() {
   const merged = codes.map(c => optimistic[c.id] ? { ...c, ...optimistic[c.id], _opt: true } : c);
 
   const sorted = filter === "all"
-    ? [...merged].sort((a, b) => (b.takenAt || b.createdAt) - (a.takenAt || a.createdAt))
+    ? [...merged].sort((a, b) => (toMs(b.takenAt) || b.createdAt) - (toMs(a.takenAt) || a.createdAt))
     : merged;
 
   const filtered = sorted.filter(c => {
@@ -1095,13 +1137,15 @@ export default function App() {
         {/* ── TOPBAR ── */}
         <nav className="topbar">
           <div className="topbar-left">
-            <div
+            <button
+              type="button"
               className="logo-wrap"
               onClick={() => isAdmin ? setIsAdmin(false) : setPinModal(true)}
               title={isAdmin ? "Exit Admin" : "Admin Login"}
+              aria-label={isAdmin ? "Exit Admin" : "Admin Login"}
             >
               <img src="/logo.png" alt="Logo" className="logo-img" />
-            </div>
+            </button>
             <div className="brand">
               <span className="brand-name">SB Grab Code Tracker</span>
               <span className="brand-sub">Staff Allocation System</span>
@@ -1118,6 +1162,12 @@ export default function App() {
             )}
           </div>
         </nav>
+
+        {connError && (
+          <div className="conn-banner">
+            Connection lost — showing last known data. <button onClick={() => window.location.reload()}>Retry</button>
+          </div>
+        )}
 
         <div className="main">
 
@@ -1303,9 +1353,7 @@ export default function App() {
                   onKeyDown={e => e.key === "Enter" && staffName.trim() && takeCode(takeModal.id, staffName.trim())}
                   autoFocus />
                 {takeError && (
-                  <div style={{ fontSize: 12.5, color: "var(--red)", background: "var(--red-light)", border: "1px solid var(--red-mid)", borderRadius: "var(--r-xs)", padding: "8px 12px", marginTop: 4 }}>
-                    {takeError}
-                  </div>
+                  <div className="take-error">{takeError}</div>
                 )}
                 <div className="m-actions">
                   <button className="btn-sec" onClick={() => { setTakeModal(null); setStaffName(""); setTakeError(""); }}>Cancel</button>
