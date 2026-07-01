@@ -1148,7 +1148,6 @@ export default function App() {
             </button>
             <div className="brand">
               <span className="brand-name">SB Grab Code Tracker</span>
-              <span className="brand-sub">Staff Allocation System</span>
             </div>
           </div>
           <div className="topbar-right">
