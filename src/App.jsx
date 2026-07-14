@@ -1,4 +1,4 @@
-// Version 1.0.3
+// Version 1.0.6
 import { useState, useEffect } from "react";
 import { Analytics } from "@vercel/analytics/react";
 import { initializeApp } from "firebase/app";
@@ -865,6 +865,11 @@ export default function App() {
   // Revealed code after successful Take (Fix #11)
   const [revealedCode, setRevealedCode] = useState(null);
 
+  // True while the Take transaction is in flight — prevents showing the reveal
+  // screen before the server has actually confirmed the code, and disables the
+  // Confirm button so it can't be double-tapped (Fix #13)
+  const [takeBusy, setTakeBusy] = useState(false);
+
   // Copy-to-clipboard feedback on reveal screen (Fix #12)
   const [copied, setCopied] = useState(false);
 
@@ -977,13 +982,15 @@ export default function App() {
   };
 
   const takeCode = async (id, name) => {
+    if (takeBusy) return; // guard against double-tap while a request is in flight
     const code = takeModal?.code;
-    // Optimistic update for instant UI feedback
-    setOptimistic(p => ({ ...p, [id]: { status: STATUS.TAKEN, takenBy: name, takenAt: Date.now() } }));
-    setStaffName("");
+    setTakeBusy(true);
     setTakeError("");
-    // Show reveal screen immediately (optimistic)
-    setRevealedCode({ code, name });
+    // Optimistic update for instant table feedback (row shows "taken" right away),
+    // but the reveal screen itself waits for server confirmation (Fix #13) — this
+    // avoids flashing "Your Code" for a code the user didn't actually win when two
+    // people tap Take on the same code at nearly the same instant.
+    setOptimistic(p => ({ ...p, [id]: { status: STATUS.TAKEN, takenBy: name, takenAt: Date.now() } }));
     try {
       // FIX #6: Transaction ensures the code is still available before writing.
       // If two users tap Take at the same time, only one wins — the other sees an error.
@@ -997,9 +1004,9 @@ export default function App() {
         tx.update(ref, { status: STATUS.TAKEN, takenBy: name, takenAt: serverTimestamp() });
       });
     } catch (err) {
-      // Rollback: hide reveal screen and show error
-      setRevealedCode(null);
+      // Rollback optimistic row and show error — reveal screen was never shown, so nothing to hide
       setOptimistic(p => { const n = { ...p }; delete n[id]; return n; });
+      setTakeBusy(false);
       if (err.message === "already_taken") {
         setTakeError("Sorry — this code was just taken by someone else. Please choose another.");
       } else {
@@ -1007,8 +1014,11 @@ export default function App() {
       }
       return;
     }
-    // Clean up optimistic state — onSnapshot will sync the real data
+    // Success — clean up optimistic state (onSnapshot will sync the real data) and reveal
     setOptimistic(p => { const n = { ...p }; delete n[id]; return n; });
+    setStaffName("");
+    setTakeBusy(false);
+    setRevealedCode({ code, name });
     log("take", `${name} took ${code}`);
   };
 
@@ -1056,17 +1066,29 @@ export default function App() {
   const selNone = () => setSelectedCodes(new Set());
 
   const clearOldLogs = async () => {
-    if (!confirm("Delete all activity logs older than 30 days? This cannot be undone.")) return;
+    if (!confirm("Delete all activity logs and release history older than 30 days? This cannot be undone.")) return;
     const cutoff = Date.now() - MONTH_MS;
     try {
-      const q = query(logsRef, where("ts", "<", cutoff));
-      const snap = await getDocs(q);
-      const batch = writeBatch(db);
-      snap.docs.forEach(d => batch.delete(d.ref));
-      await batch.commit();
-      const count = snap.docs.length;
-      log("delete", `Cleared ${count} old log entry(ies) — older than 30 days`);
-      alert(`✓ Deleted ${count} old log entries.`);
+      // Activity log
+      const logQ = query(logsRef, where("ts", "<", cutoff));
+      const logSnap = await getDocs(logQ);
+      const logBatch = writeBatch(db);
+      logSnap.docs.forEach(d => logBatch.delete(d.ref));
+      await logBatch.commit();
+      const logCount = logSnap.docs.length;
+
+      // Release history — previously only hidden from the UI by the listener's
+      // cutoff filter, never actually deleted from Firestore. Prune it here too
+      // so the collection doesn't grow unbounded.
+      const relQ = query(releaseHistRef, where("releasedAt", "<", cutoff));
+      const relSnap = await getDocs(relQ);
+      const relBatch = writeBatch(db);
+      relSnap.docs.forEach(d => relBatch.delete(d.ref));
+      await relBatch.commit();
+      const relCount = relSnap.docs.length;
+
+      log("delete", `Cleared ${logCount} old log entry(ies) and ${relCount} old release record(s) — older than 30 days`);
+      alert(`✓ Deleted ${logCount} old log entries and ${relCount} old release records.`);
     } catch (err) {
       console.error("Clear logs failed:", err);
       alert("Failed to clear logs. Try again.");
@@ -1270,7 +1292,11 @@ export default function App() {
                       <span className="t-num">{i + 1}</span>
                       {/* Fix #11: Mask available codes — only reveal after Take flow */}
                       {c.status === STATUS.AVAILABLE && !isAdmin
-                        ? <span className="t-code-masked">{c.code.slice(0, Math.max(2, c.code.length - 2)).replace(/[A-Z0-9]/g, (ch, idx) => idx < 2 ? ch : "•") + "••"}</span>
+                        ? <span className="t-code-masked">
+                            {c.code.split("").map((ch, idx) =>
+                              idx < 2 || !/[A-Z0-9]/.test(ch) ? ch : "•"
+                            ).join("")}
+                          </span>
                         : <span className="t-code">{c.code}</span>
                       }
                       <span className="t-staff t-desktop-only">{c.takenBy || ""}</span>
@@ -1349,16 +1375,18 @@ export default function App() {
                 <label className="f-label">Your Name</label>
                 <input className="f-input" type="text" placeholder="e.g. Kimtong, Sothea, Hongsrun…"
                   value={staffName} onChange={e => setStaffName(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && staffName.trim() && takeCode(takeModal.id, staffName.trim())}
+                  onKeyDown={e => e.key === "Enter" && staffName.trim() && !takeBusy && takeCode(takeModal.id, staffName.trim())}
+                  disabled={takeBusy}
                   autoFocus />
                 {takeError && (
                   <div className="take-error">{takeError}</div>
                 )}
                 <div className="m-actions">
-                  <button className="btn-sec" onClick={() => { setTakeModal(null); setStaffName(""); setTakeError(""); }}>Cancel</button>
-                  <button className="btn-pri green" disabled={!staffName.trim()}
+                  <button className="btn-sec" disabled={takeBusy}
+                    onClick={() => { setTakeModal(null); setStaffName(""); setTakeError(""); }}>Cancel</button>
+                  <button className="btn-pri green" disabled={!staffName.trim() || takeBusy}
                     onClick={() => staffName.trim() && takeCode(takeModal.id, staffName.trim())}>
-                    Confirm & Reveal
+                    {takeBusy ? "Confirming…" : "Confirm & Reveal"}
                   </button>
                 </div>
               </>
