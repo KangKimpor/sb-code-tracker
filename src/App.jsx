@@ -823,10 +823,15 @@ function formatTime(ts) {
     " " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
+// Used by the Activity Log and Release History, which both span up to 30 days —
+// so the date is included, not just the clock time. Keeps seconds (unlike
+// formatTime) because log entries can land within the same minute.
 function formatTimeShort(ts) {
   const ms = toMs(ts);
   if (!ms) return "";
-  return new Date(ms).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const d = new Date(ms);
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) +
+    " " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 // Prevents spreadsheet formula injection when CSV is opened in Excel/Sheets
