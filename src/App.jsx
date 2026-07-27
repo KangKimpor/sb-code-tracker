@@ -1,12 +1,12 @@
 // Version 1.0.6
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Analytics } from "@vercel/analytics/react";
 import { initializeApp } from "firebase/app";
 import {
   getFirestore, collection, onSnapshot,
   addDoc, updateDoc, deleteDoc, doc,
   query, orderBy, limit, where,
-  serverTimestamp, runTransaction, getDocs, writeBatch
+  serverTimestamp, runTransaction, getDocs, writeBatch, Timestamp
 } from "firebase/firestore";
 
 // 🔥 Firebase config loaded from environment variables
@@ -29,6 +29,12 @@ const releaseHistRef = collection(db, "releaseHistory");
 
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 
+// ⚠️ NOT A SECURITY BOUNDARY. Vite inlines every VITE_* variable into the public
+// bundle at build time, so whatever value this resolves to is readable by anyone
+// via DevTools — verified by grepping the built output. `isAdmin` is also plain
+// React state and can be flipped in React DevTools without the PIN at all.
+// This only prevents accidental clicks on admin controls.
+// Real admin gating requires Firebase Auth + custom claims enforced in firestore.rules.
 const ADMIN_PIN = import.meta.env.VITE_ADMIN_PIN || "782945"; // CHANGE THIS or set VITE_ADMIN_PIN in .env
 const STATUS = { AVAILABLE: "available", TAKEN: "taken" };
 
@@ -873,6 +879,12 @@ export default function App() {
   // Copy-to-clipboard feedback on reveal screen (Fix #12)
   const [copied, setCopied] = useState(false);
 
+  // Holds the pending "Copied ✓" reset timer so repeated copies can't stack
+  // independent timers (an earlier one would clear the badge mid-way through a
+  // later copy's window). Also lets us cancel it on unmount.
+  const copyTimer = useRef(null);
+  useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current); }, []);
+
   const copyRevealedCode = async (code) => {
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -885,11 +897,19 @@ export default function App() {
         ta.style.opacity = "0";
         document.body.appendChild(ta);
         ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
+        // iOS Safari ignores select() on its own for a textarea
+        ta.setSelectionRange(0, code.length);
+        // execCommand returns false on failure instead of throwing. Without this
+        // check we fall through to setCopied(true) and show "Copied ✓" while the
+        // clipboard is actually untouched — the worst outcome here, since the UI
+        // tells the user to rely on it.
+        const ok = document.execCommand("copy");
+        document.body.removeChild(ta);   // remove before throwing so the node can't leak
+        if (!ok) throw new Error("copy_failed");
       }
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 1500);
     } catch {
       // Clipboard write blocked (rare) — fail silently, code is still visible on screen
     }
@@ -918,7 +938,10 @@ export default function App() {
   useEffect(() => {
     const unsub = onSnapshot(codesRef, snap => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      data.sort((a, b) => a.createdAt - b.createdAt);
+      // `|| 0` keeps the comparator consistent if a doc was added outside the app
+      // (e.g. via the Firebase console) and has no createdAt — otherwise NaN makes
+      // the sort order implementation-defined.
+      data.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
       setCodes(data);
       setLoading(false);
       setConnError(false);
@@ -947,7 +970,12 @@ export default function App() {
   useEffect(() => {
     if (!codeManager) return;
     const cutoff = Date.now() - MONTH_MS;
-    const q = query(releaseHistRef, where("releasedAt", ">", cutoff), orderBy("releasedAt", "desc"), limit(200));
+    // releasedAt is written with serverTimestamp(), i.e. a Firestore Timestamp.
+    // Firestore range scans are confined to the bound's own type, so comparing
+    // against a plain number (Date.now()) matched nothing and this list was
+    // permanently empty. The bound must be a Timestamp too.
+    // (activityLog.ts is a plain number and is correctly compared as one.)
+    const q = query(releaseHistRef, where("releasedAt", ">", Timestamp.fromMillis(cutoff)), orderBy("releasedAt", "desc"), limit(200));
     const unsub = onSnapshot(q, snap => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setReleaseHistory(data);
@@ -965,8 +993,16 @@ export default function App() {
     const t = newCode.trim().toUpperCase();
     if (!t || codes.some(c => c.code === t)) { setNewCode(""); return; }
     setNewCode("");
-    await addDoc(codesRef, { code: t, status: STATUS.AVAILABLE, takenBy: null, takenAt: null, createdAt: Date.now() });
-    log("add", `${t} added`);
+    try {
+      await addDoc(codesRef, { code: t, status: STATUS.AVAILABLE, takenBy: null, takenAt: null, createdAt: Date.now() });
+      log("add", `${t} added`);
+    } catch (err) {
+      // Previously this rejection was unhandled: the input had already been
+      // cleared, so the admin lost their input and was never told it failed.
+      console.error("addCode failed:", err);
+      setNewCode(t);
+      alert("Failed to add code. Please try again.");
+    }
   };
 
   const addBulk = async () => {
@@ -975,10 +1011,28 @@ export default function App() {
     const toAdd = [...new Set(lines)].filter(c => !existing.has(c));
     if (!toAdd.length) { setBulkText(""); return; }
     setBulkText("");
-    await Promise.all(toAdd.map((code, i) =>
-      addDoc(codesRef, { code, status: STATUS.AVAILABLE, takenBy: null, takenAt: null, createdAt: Date.now() + i })
-    ));
-    log("bulk", `${toAdd.length} code(s) bulk-added`);
+    try {
+      // Batched instead of Promise.all: a batch is atomic, so a failure can no
+      // longer leave a partial set of codes written. Also 1 round trip per 400
+      // codes instead of one per code. doc(codesRef) generates the same kind of
+      // auto-ID that addDoc does internally.
+      const base = Date.now();
+      for (let i = 0; i < toAdd.length; i += 400) {
+        const batch = writeBatch(db);
+        toAdd.slice(i, i + 400).forEach((code, j) => {
+          batch.set(doc(codesRef), {
+            code, status: STATUS.AVAILABLE, takenBy: null, takenAt: null,
+            createdAt: base + i + j   // same increasing sequence as before, preserves paste order
+          });
+        });
+        await batch.commit();
+      }
+      log("bulk", `${toAdd.length} code(s) bulk-added`);
+    } catch (err) {
+      console.error("addBulk failed:", err);
+      setBulkText(toAdd.join("\n"));   // restore so a long paste isn't lost
+      alert("Failed to add codes. Please try again.");
+    }
   };
 
   const takeCode = async (id, name) => {
@@ -1007,7 +1061,9 @@ export default function App() {
       // Rollback optimistic row and show error — reveal screen was never shown, so nothing to hide
       setOptimistic(p => { const n = { ...p }; delete n[id]; return n; });
       setTakeBusy(false);
-      if (err.message === "already_taken") {
+      // Optional chaining: if err were ever null the catch block itself would throw,
+      // skipping setTakeBusy(false) and permanently freezing the Confirm button.
+      if (err?.message === "already_taken") {
         setTakeError("Sorry — this code was just taken by someone else. Please choose another.");
       } else {
         setTakeError("Something went wrong. Please try again.");
@@ -1028,15 +1084,24 @@ export default function App() {
     const takenAt = releaseConfirm?.takenAt;
     setOptimistic(p => ({ ...p, [id]: { status: STATUS.AVAILABLE, takenBy: null, takenAt: null } }));
     setReleaseConfirm(null);
-    if (code) {
-      // FIX #7: serverTimestamp() for releasedAt — authoritative server time
-      addDoc(releaseHistRef, {
-        code, takenBy: by || "—", takenAt: takenAt || null, releasedAt: serverTimestamp()
-      }).catch(() => {});
-    }
     try {
       await updateDoc(doc(db, "codes", id), { status: STATUS.AVAILABLE, takenBy: null, takenAt: null });
+      // History is written only AFTER the release is confirmed. Writing it first
+      // meant a failed updateDoc left a permanent record of a release that never
+      // happened. `codes` is the source of truth, so ordering it this way makes a
+      // missing history row the worst case instead of a phantom one.
+      if (code) {
+        // serverTimestamp() for releasedAt — authoritative server time
+        await addDoc(releaseHistRef, {
+          code, takenBy: by || "—", takenAt: takenAt || null, releasedAt: serverTimestamp()
+        }).catch(err => console.error("release history write failed:", err));
+      }
       log("release", `Released ${code}${by ? ` from ${by}` : ""}`);
+    } catch (err) {
+      // Without this catch the rejection was unhandled and the row silently
+      // reverted to "taken" with no explanation to the admin.
+      console.error("release failed:", err);
+      alert("Failed to release code. Please try again.");
     } finally {
       setOptimistic(p => { const n = { ...p }; delete n[id]; return n; });
     }
@@ -1045,8 +1110,13 @@ export default function App() {
   const deleteCode = async (id) => {
     const c = codes.find(x => x.id === id);
     setSelectedCodes(p => { const n = new Set(p); n.delete(id); return n; });
-    await deleteDoc(doc(db, "codes", id));
-    if (c) log("delete", `Deleted ${c.code}`);
+    try {
+      await deleteDoc(doc(db, "codes", id));
+      if (c) log("delete", `Deleted ${c.code}`);
+    } catch (err) {
+      console.error("deleteCode failed:", err);
+      alert("Failed to delete code. Please try again.");
+    }
   };
 
   const bulkDelete = async () => {
@@ -1055,8 +1125,19 @@ export default function App() {
     const preview = names.slice(0, 5).join(", ") + (names.length > 5 ? ` +${names.length - 5} more` : "");
     setSelectedCodes(new Set());
     setBulkDelConfirm(false);
-    await Promise.all(ids.map(id => deleteDoc(doc(db, "codes", id))));
-    log("bulk", `Deleted ${ids.length} code(s): ${preview}`);
+    try {
+      // Batched for the same reasons as addBulk: atomic per chunk, and it stays
+      // within Firestore's 500-operation limit per batch.
+      for (let i = 0; i < ids.length; i += 400) {
+        const batch = writeBatch(db);
+        ids.slice(i, i + 400).forEach(id => batch.delete(doc(db, "codes", id)));
+        await batch.commit();
+      }
+      log("bulk", `Deleted ${ids.length} code(s): ${preview}`);
+    } catch (err) {
+      console.error("bulkDelete failed:", err);
+      alert("Failed to delete some codes. Please refresh and try again.");
+    }
   };
 
   const toggleSel = id => setSelectedCodes(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -1065,6 +1146,19 @@ export default function App() {
   const selTaken = () => setSelectedCodes(new Set(codes.filter(c => c.status === STATUS.TAKEN).map(c => c.id)));
   const selNone = () => setSelectedCodes(new Set());
 
+  // A writeBatch is capped at 500 operations, so a single batch silently breaks
+  // once the backlog grows past it — and log() fires on every add/take/release,
+  // so that happens fast. Committing in chunks keeps pruning usable at any size.
+  // Returns the number of documents deleted.
+  const deleteDocsInChunks = async (docsToDelete) => {
+    for (let i = 0; i < docsToDelete.length; i += 400) {
+      const batch = writeBatch(db);
+      docsToDelete.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+    return docsToDelete.length;
+  };
+
   const clearOldLogs = async () => {
     if (!confirm("Delete all activity logs and release history older than 30 days? This cannot be undone.")) return;
     const cutoff = Date.now() - MONTH_MS;
@@ -1072,20 +1166,16 @@ export default function App() {
       // Activity log
       const logQ = query(logsRef, where("ts", "<", cutoff));
       const logSnap = await getDocs(logQ);
-      const logBatch = writeBatch(db);
-      logSnap.docs.forEach(d => logBatch.delete(d.ref));
-      await logBatch.commit();
-      const logCount = logSnap.docs.length;
+      const logCount = await deleteDocsInChunks(logSnap.docs);
 
       // Release history — previously only hidden from the UI by the listener's
       // cutoff filter, never actually deleted from Firestore. Prune it here too
       // so the collection doesn't grow unbounded.
-      const relQ = query(releaseHistRef, where("releasedAt", "<", cutoff));
+      // Timestamp bound for the same reason as the listener above — with a plain
+      // number this matched nothing, so pruning always reported 0 records.
+      const relQ = query(releaseHistRef, where("releasedAt", "<", Timestamp.fromMillis(cutoff)));
       const relSnap = await getDocs(relQ);
-      const relBatch = writeBatch(db);
-      relSnap.docs.forEach(d => relBatch.delete(d.ref));
-      await relBatch.commit();
-      const relCount = relSnap.docs.length;
+      const relCount = await deleteDocsInChunks(relSnap.docs);
 
       log("delete", `Cleared ${logCount} old log entry(ies) and ${relCount} old release record(s) — older than 30 days`);
       alert(`✓ Deleted ${logCount} old log entries and ${relCount} old release records.`);
@@ -1120,14 +1210,25 @@ export default function App() {
       });
     }
     const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `codes-export-${new Date().toISOString().slice(0,10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    log("export", `CSV exported — ${codes.length} codes`);
+    try {
+      // Leading BOM so Excel detects UTF-8 and doesn't mangle non-ASCII staff names
+      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `codes-export-${new Date().toISOString().slice(0,10)}.csv`;
+      // Firefox only honours a synthetic click() if the anchor is in the document
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Revoking synchronously can cancel the download before the browser has
+      // finished reading the blob (Safari/Firefox) — defer it instead.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      log("export", `CSV exported — ${codes.length} codes`);
+    } catch (err) {
+      console.error("CSV export failed:", err);
+      alert("Failed to export CSV. Please try again.");
+    }
   };
 
   // Merge optimistic
@@ -1483,7 +1584,7 @@ export default function App() {
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div className="cl-name">{c.code}</div>
                           <div className="cl-meta">
-                            {c.status === STATUS.TAKEN ? `Taken by ${c.takenBy} · ${formatTime(c.takenAt)}` : "Available"}
+                            {c.status === STATUS.TAKEN ? `Taken by ${c.takenBy || "—"} · ${formatTime(c.takenAt)}` : "Available"}
                           </div>
                         </div>
                         <span className={`bdg ${c.status === STATUS.AVAILABLE ? "avail" : "taken"}`}>
