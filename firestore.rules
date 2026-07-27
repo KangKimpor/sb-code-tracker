@@ -1,0 +1,100 @@
+rules_version = '2';
+
+// Security rules for sb-code-tracker.
+//
+// IMPORTANT CONTEXT: this app uses NO Firebase Authentication. Every read and
+// write is anonymous, so these rules cannot identify *who* is acting — they can
+// only constrain *what* may be written. The admin PIN in App.jsx is a client-side
+// convenience, not a security boundary (see the comment above ADMIN_PIN).
+//
+// The highest-value rule here is the `codes` update rule: it makes the
+// available -> taken transition enforceable on the server, so the claim
+// invariant no longer depends on a cooperating client.
+//
+// Derived from the actual access patterns in src/App.jsx. If you change how the
+// app reads or writes, update these rules to match.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /codes/{codeId} {
+
+      // App.jsx subscribes to the whole collection with onSnapshot(codesRef).
+      // NOTE: this necessarily exposes every code value, including ones the UI
+      // masks before they are claimed. Masking is presentational only.
+      allow read: if true;
+
+      // Created by addCode (single) and addBulk (batch.set). Both write exactly
+      // these five fields, always starting in the "available" state.
+      allow create: if request.resource.data.keys().hasOnly(
+                         ['code', 'status', 'takenBy', 'takenAt', 'createdAt'])
+                    && request.resource.data.code is string
+                    && request.resource.data.code.size() > 0
+                    && request.resource.data.code.size() <= 64
+                    && request.resource.data.status == 'available'
+                    && request.resource.data.takenBy == null
+                    && request.resource.data.takenAt == null
+                    && request.resource.data.createdAt is int;
+
+      // Only the two transitions the app performs are permitted, and `code` /
+      // `createdAt` are immutable. This is what stops a client from writing
+      // status directly and bypassing the runTransaction claim check.
+      allow update: if request.resource.data.keys().hasOnly(
+                         ['code', 'status', 'takenBy', 'takenAt', 'createdAt'])
+                    && request.resource.data.code == resource.data.code
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && (
+                      // CLAIM: available -> taken (takeCode / runTransaction).
+                      // serverTimestamp() resolves to request.time, so requiring
+                      // equality here forces an authoritative server clock.
+                      (resource.data.status == 'available'
+                        && request.resource.data.status == 'taken'
+                        && request.resource.data.takenBy is string
+                        && request.resource.data.takenBy.size() > 0
+                        && request.resource.data.takenBy.size() <= 60
+                        && request.resource.data.takenAt == request.time)
+                      ||
+                      // RELEASE: taken -> available (releaseCode / updateDoc)
+                      (resource.data.status == 'taken'
+                        && request.resource.data.status == 'available'
+                        && request.resource.data.takenBy == null
+                        && request.resource.data.takenAt == null)
+                    );
+
+      // Required by deleteCode and bulkDelete. Admin-only in the UI, but NOT
+      // enforceable without real authentication — this is a known open risk.
+      allow delete: if true;
+    }
+
+    // Append-only audit trail written by log(). Entries may never be edited.
+    match /activityLog/{logId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['type', 'text', 'ts'])
+                    && request.resource.data.type is string
+                    && request.resource.data.text is string
+                    && request.resource.data.text.size() <= 500
+                    && request.resource.data.ts is int;
+      allow update: if false;
+      allow delete: if true;   // required by clearOldLogs
+    }
+
+    // Written by releaseCode after a release is confirmed. Also append-only.
+    // releasedAt is a serverTimestamp(); takenAt is copied from the code doc and
+    // may be null, so it is not type-constrained here.
+    match /releaseHistory/{recordId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(
+                         ['code', 'takenBy', 'takenAt', 'releasedAt'])
+                    && request.resource.data.code is string
+                    && request.resource.data.takenBy is string
+                    && request.resource.data.releasedAt == request.time;
+      allow update: if false;
+      allow delete: if true;   // required by clearOldLogs
+    }
+
+    // Deny everything else by default.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
