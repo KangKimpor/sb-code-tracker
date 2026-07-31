@@ -633,7 +633,8 @@ in a diff are new.
 
 Rewrite the sentence rather than substituting a hyphen. A colon works where the dash
 introduced something, a comma where it was parenthetical, and a full stop where it joined
-two independent clauses. `grep -n '—\|–'` before pushing.
+two independent clauses. Check with `grep -rnP '\x{2014}|\x{2013}' .` before pushing, which
+uses PCRE escapes so the check itself contains none.
 
 One thing that is *not* a dash and should be left alone: the `───` separators in the CSS
 section banners are box-drawing characters.
