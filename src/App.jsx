@@ -40,6 +40,14 @@ const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 // per-month lock would swallow it.
 const REQUEST_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 
+// Admin alert thresholds.
+// At roughly 40 codes for 30 staff, 3 left is about a day of demand: enough notice to
+// paste a top-up before anyone is actually turned away.
+const LOW_STOCK_THRESHOLD = 3;
+// Only nudge about next month's drop inside the last week. Earlier than that it is not yet
+// news, and a banner that sits there all month is one people learn to scroll past.
+const STAGE_REMINDER_DAYS = 7;
+
 const LS_DEVICE = "sbGrabDeviceId";
 const LS_REQUEST = "sbGrabLastRequest";
 
@@ -221,6 +229,43 @@ const styles = `
     box-shadow: none;
   }
   .topup-note { font-size: 12.5px; color: var(--text-4); margin-top: 9px; line-height: 1.45; }
+
+  /* ─── ADMIN ALERTS ─── */
+  /* Advisory banners above the hero, admin only. Deliberately not styled as cards: they sit
+     between the header and the hero card and should read as an interruption in the flow
+     rather than another piece of furniture competing with the availability figure. */
+  .admin-alerts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  .admin-alert {
+    display: flex; align-items: center; gap: 11px; flex-wrap: wrap;
+    padding: 12px 14px; border-radius: var(--r-lg);
+    border: 1px solid transparent;
+    animation: rowIn 0.28s var(--ease-out) both;
+  }
+  .admin-alert.warn { background: var(--orange-light); border-color: rgba(255,149,0,0.3); }
+  .admin-alert.urgent { background: var(--red-light); border-color: var(--red-mid); }
+  .admin-alert-ico {
+    width: 25px; height: 25px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 700; color: #fff; line-height: 1;
+  }
+  .admin-alert.warn .admin-alert-ico { background: var(--orange); }
+  .admin-alert.urgent .admin-alert-ico { background: var(--red); }
+  .admin-alert-main { flex: 1; min-width: 145px; }
+  .admin-alert-title { font-size: 13.5px; font-weight: 700; letter-spacing: -0.2px; }
+  .admin-alert.warn .admin-alert-title { color: var(--orange-dark); }
+  .admin-alert.urgent .admin-alert-title { color: var(--red-dark); }
+  .admin-alert-sub { font-size: 12px; color: var(--text-3); line-height: 1.45; margin-top: 2px; }
+  /* Solid white against the tint so the action reads as the way out of the alert. */
+  .admin-alert-btn {
+    background: var(--surface); border: 1px solid var(--border-mid);
+    border-radius: 10px; font-family: var(--font);
+    font-size: 12.5px; font-weight: 600; color: var(--text-2);
+    padding: 8px 14px; cursor: pointer; transition: all 0.15s;
+    flex-shrink: 0; white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .admin-alert-btn:hover { background: var(--text); color: #fff; border-color: var(--text); }
+  .admin-alert-btn:active { transform: scale(0.97); }
 
   /* ─── TOOLBAR ─── */
   .toolbar { display: flex; flex-direction: column; margin-bottom: 16px; }
@@ -411,6 +456,12 @@ const styles = `
     .t-row { padding: 14px 15px; gap: 10px; }
     .t-code, .t-code-masked { font-size: 17px; letter-spacing: 0.8px; }
     .btn-take { padding: 10px 20px; font-size: 14.5px; }
+    /* The alert row runs out of width here and wraps its action onto a second line, where
+       it would otherwise sit orphaned under the icon and out of line with the text it
+       belongs to. Full width reads as a deliberate action instead.
+       This override works from here only because .admin-alert-btn is defined above this
+       block. See the source-order note in the steering doc. */
+    .admin-alert-btn { width: 100%; }
   }
 
   /* ─── OVERLAY / MODAL ─── */
@@ -925,19 +976,23 @@ function partitionCodes(list, month) {
 //
 // Counts whole days remaining, so on the last day of the month it reads "today". Built
 // from the local clock for the same reason as monthKeyOf.
+// `days` and `label` are returned alongside the copy because the admin staging nudge needs
+// the raw number, and re-deriving "how much of the month is left" in a second place is how
+// the two drift apart. `days` is null whenever it would be meaningless, so a caller has to
+// null-check rather than accidentally treating "not this month" as zero days remaining.
 function monthExpiry(month) {
   const [y, m] = month.split("-").map(Number);
-  if (!y || !m) return { text: "", urgent: false };
+  if (!y || !m) return { text: "", urgent: false, days: null, label: "" };
   const last = new Date(y, m, 0);            // day 0 of next month is the last of this one
   const label = last.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   const now = new Date();
   // Only meaningful while `month` is the month we are actually in, which it always is
   // on the render path. Fall back to the plain date otherwise.
-  if (monthKeyOf(now) !== month) return { text: `Valid until ${label}`, urgent: false };
+  if (monthKeyOf(now) !== month) return { text: `Valid until ${label}`, urgent: false, days: null, label };
   const days = last.getDate() - now.getDate();
-  if (days <= 0) return { text: `Expire today (${label})`, urgent: true };
-  if (days === 1) return { text: `Expire tomorrow (${label})`, urgent: true };
-  return { text: `Expire in ${days} days (${label})`, urgent: days <= 3 };
+  if (days <= 0) return { text: `Expire today (${label})`, urgent: true, days, label };
+  if (days === 1) return { text: `Expire tomorrow (${label})`, urgent: true, days, label };
+  return { text: `Expire in ${days} days (${label})`, urgent: days <= 3, days, label };
 }
 
 // Masks an unclaimed code. Shows enough of the prefix to tell codes apart in a list
@@ -1770,6 +1825,58 @@ export default function App() {
   // themselves, and while offline, where the write would only fail.
   const canRequestTopup = !loading && !connError && !isAdmin && avail === 0;
 
+  // ── Admin alerts ──
+  // Both alerts describe the same eventual failure, staff arriving to an empty tracker, at
+  // two different distances out. Running dry this month is visible to everyone the moment
+  // it happens. Next month never being staged is worse precisely because it is invisible:
+  // the tracker empties itself at midnight on the 1st, with nobody watching, and the first
+  // sign of it is 30 people who cannot book a ride.
+  //
+  // Admin only, and purely advisory. Nothing here blocks anything, and there is no dismiss
+  // button on purpose: each alert clears itself when the thing it is asking for is done,
+  // which is a stronger guarantee than a dismissal that hides an unfixed problem.
+  const nextMonth = shiftMonthKey(nowMonth, 1);
+  const nextMonthStaged = stagedCodes.filter(c => c.monthKey === nextMonth).length;
+
+  const adminAlerts = [];
+  if (isAdmin && !loading && !connError) {
+    // Stock, gated on total > 0. With nothing on file at all the hero and the empty state
+    // already say so in more detail, and "you have run out" is the wrong description of a
+    // month that was never filled in the first place.
+    if (total > 0 && avail === 0) {
+      adminAlerts.push({
+        key: "out",
+        level: "urgent",
+        title: `All ${total} codes claimed`,
+        sub: `Nothing is left for ${monthLabel(nowMonth)}. Adding more tops up the live pool and deletes nothing.`,
+        action: "Add codes",
+        dropTo: nowMonth,
+      });
+    } else if (total > 0 && avail <= LOW_STOCK_THRESHOLD) {
+      adminAlerts.push({
+        key: "low",
+        level: "warn",
+        title: `Only ${avail} code${avail === 1 ? "" : "s"} left`,
+        sub: `${avail} of ${total} still available for ${monthLabel(nowMonth)}. Top up before it runs dry.`,
+        action: "Add codes",
+        dropTo: nowMonth,
+      });
+    }
+
+    // Staging. `days` is null unless nowMonth really is the current month, so the
+    // null-check is what stops this firing on a stale or malformed month key.
+    if (expiry.days !== null && expiry.days <= STAGE_REMINDER_DAYS && nextMonthStaged === 0) {
+      adminAlerts.push({
+        key: "unstaged",
+        level: "warn",
+        title: `Nothing staged for ${monthLabelShort(nextMonth)}`,
+        sub: `These codes stop working after ${expiry.label}. Without a staged drop the tracker is empty on the 1st.`,
+        action: `Stage ${monthLabelShort(nextMonth)}`,
+        dropTo: nextMonth,
+      });
+    }
+  }
+
   // Empty-state copy. Month scoping introduces two cases that used to be impossible:
   // this month's drop hasn't been added yet, and everything on file is either staged for
   // a future month or already expired. Telling the two apart matters, because "no codes yet"
@@ -1848,6 +1955,30 @@ export default function App() {
         )}
 
         <div className="main">
+
+          {/* ── ADMIN ALERTS ── */}
+          {/* Each action jumps straight into Code Manager with Drop Month already set to the
+              month that alert is about. That is the one field on the screen that silently
+              decides whether codes go live now or in a month, so pre-setting it is error
+              prevention, not a shortcut: it removes the step where a top-up gets pasted
+              into next month's drop, or next month's batch lands in the live pool. */}
+          {adminAlerts.length > 0 && (
+            <div className="admin-alerts">
+              {adminAlerts.map(a => (
+                <div key={a.key} className={`admin-alert ${a.level}`}>
+                  <span className="admin-alert-ico">!</span>
+                  <div className="admin-alert-main">
+                    <div className="admin-alert-title">{a.title}</div>
+                    <div className="admin-alert-sub">{a.sub}</div>
+                  </div>
+                  <button className="admin-alert-btn"
+                    onClick={() => { setDropMonth(a.dropTo); setCodeManager(true); }}>
+                    {a.action}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* ── AVAILABILITY ── */}
           <div className="hero">
