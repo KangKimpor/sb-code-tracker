@@ -398,6 +398,19 @@ Both omit the year: the retention window is 30 days, so a year never disambiguat
 `toMs()` handles Firestore Timestamps, plain numbers, and null uniformly. Always route
 timestamps through it.
 
+### No em dashes or en dashes, anywhere
+
+Owner preference, applied across the whole repo: source comments, UI strings, rules
+comments, markdown, commit messages. The repo was swept clean of them, so any that appear
+in a diff are new.
+
+Rewrite the sentence rather than substituting a hyphen. A colon works where the dash
+introduced something, a comma where it was parenthetical, and a full stop where it joined
+two independent clauses. `grep -n '—\|–'` before pushing.
+
+One thing that is *not* a dash and should be left alone: the `───` separators in the CSS
+section banners are box-drawing characters.
+
 ---
 
 ## Decisions (don't "fix" these)
