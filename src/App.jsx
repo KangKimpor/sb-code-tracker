@@ -1,4 +1,4 @@
-// Version 1.2.0
+// Version 1.3.0
 import { useState, useEffect, useRef } from "react";
 import { Analytics } from "@vercel/analytics/react";
 import { initializeApp } from "firebase/app";
@@ -26,8 +26,22 @@ const db = getFirestore(app);
 const codesRef = collection(db, "codes");
 const logsRef = collection(db, "activityLog");
 const releaseHistRef = collection(db, "releaseHistory");
+// One doc per "we're out" tap from a staff member. Topping up mid-month is normal
+// operation here, but the request for it used to happen out of band (a message, or a
+// tap on the shoulder), so an empty pool could sit empty simply because nobody told
+// the admin. This turns that into a signal the tool itself carries.
+const topupReqRef = collection(db, "topupRequests");
 
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+
+// How long a device waits before it can ask for a top-up again. Long enough that
+// repeated taps cannot spam the admin, short enough that a pool which empties twice in
+// the same month can be reported twice: the second time is the one that matters, and a
+// per-month lock would swallow it.
+const REQUEST_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+
+const LS_DEVICE = "sbGrabDeviceId";
+const LS_REQUEST = "sbGrabLastRequest";
 
 // ⚠️ NOT A SECURITY BOUNDARY. Vite inlines every VITE_* variable into the public
 // bundle at build time, so whatever value this resolves to is readable by anyone
@@ -149,6 +163,10 @@ const styles = `
   .pill.admin .pill-dot { background: var(--red); }
   .pill.sched { background: rgba(175,82,222,0.10); border-color: rgba(175,82,222,0.28); color: #8e34c4; }
   .pill.sched .pill-dot { background: #af52de; }
+  /* Staff waiting on a top-up. Orange rather than red: it is a request to act on, not
+     a fault, and red is already spoken for by the admin pill sitting next to it. */
+  .pill.req { background: var(--orange-light); border-color: rgba(255,149,0,0.3); color: var(--orange-dark); }
+  .pill.req .pill-dot { background: var(--orange); }
   @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
 
   .conn-banner {
@@ -180,6 +198,29 @@ const styles = `
   .hero-num.none { color: var(--text-3); }
   .hero-sub { font-size: 15px; color: var(--text-3); margin-top: 7px; letter-spacing: -0.2px; }
   .hero-sub.urgent { color: var(--orange-dark); font-weight: 600; }
+
+  /* Lives in the hero, not the empty state, so an empty pool always offers a way out
+     regardless of which filter is active. Full width and blue, because when it shows it
+     is the only action on the screen worth taking. */
+  .btn-topup {
+    width: 100%; margin-top: 16px;
+    background: var(--blue); color: #fff; border: none;
+    border-radius: 14px; font-family: var(--font);
+    font-size: 14.5px; font-weight: 600; padding: 12px;
+    cursor: pointer; transition: background 0.16s, transform 0.16s, box-shadow 0.16s;
+    box-shadow: 0 1px 4px rgba(0,122,255,0.3);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-topup:hover:not(:disabled) { background: #0069e0; box-shadow: 0 3px 12px rgba(0,122,255,0.34); }
+  .btn-topup:active:not(:disabled) { transform: scale(0.985); }
+  .btn-topup:disabled { cursor: default; }
+  /* Sent state stays legible rather than dimmed: it is a confirmation, and a greyed-out
+     button reads as a failure to a person who just pressed it. */
+  .btn-topup.sent {
+    background: var(--green-light); color: var(--green-dark);
+    box-shadow: none;
+  }
+  .topup-note { font-size: 12.5px; color: var(--text-4); margin-top: 9px; line-height: 1.45; }
 
   /* ─── TOOLBAR ─── */
   .toolbar { display: flex; flex-direction: column; margin-bottom: 16px; }
@@ -676,6 +717,7 @@ const styles = `
   .act-dot.release { background: var(--orange); }
   .act-dot.delete, .act-dot.bulk { background: var(--red); }
   .act-dot.export { background: #5ac8fa; }
+  .act-dot.request { background: var(--orange); }
   .act-dot.schedule { background: #af52de; }
   .act-dot.expire { background: var(--text-4); }
   .act-text { font-size: 12px; color: var(--text-3); flex: 1; line-height: 1.4; }
@@ -712,31 +754,62 @@ const styles = `
   .btn-clear-logs:hover { background: rgba(255, 159, 64, 0.2); border-color: rgba(255, 159, 64, 0.35); }
   .btn-clear-logs:active { transform: scale(0.98); }
 
-  /* Code reveal screen inside Take modal */
+  /* ─── CODE REVEAL (inside Take modal) ─── */
+  /* The payoff screen, and the only place a code is ever shown deliberately. The code is
+     the hero: a solid green block with white text, sized to be read at arm's length, read
+     aloud to someone else, or screenshotted and read back later.
+     Monospace is kept even though nothing else here uses it. Grab codes get typed into
+     another app, so 0 against O and 1 against I have to be tellable apart. */
   .reveal-screen {
     display: flex; flex-direction: column; align-items: center;
-    gap: 6px; padding: 8px 0 4px;
+    padding: 6px 0 2px;
     animation: modalIn 0.26s var(--ease-spring);
   }
-  .reveal-icon { font-size: 32px; margin-bottom: 4px; }
+  .reveal-icon { font-size: 40px; line-height: 1; margin-bottom: 12px; }
   .reveal-label {
-    font-size: 11px; font-weight: 600; color: var(--text-4);
-    text-transform: uppercase; letter-spacing: 0.7px;
+    font-size: 12px; font-weight: 700; color: var(--text-4);
+    text-transform: uppercase; letter-spacing: 1.3px;
   }
   .reveal-code {
-    font-family: var(--font-mono); font-size: 28px; font-weight: 700;
-    color: var(--green-dark); letter-spacing: 2px;
-    background: var(--green-light); border: 2px solid var(--green-mid);
-    border-radius: var(--r-lg); padding: 18px 28px; margin: 6px 0;
-    text-align: center; width: 100%; word-break: break-all;
+    width: 100%; margin: 14px 0 16px;
+    background: var(--green); color: #fff;
+    border: none; border-radius: var(--r-xl);
+    padding: 24px 18px; text-align: center;
+    font-family: var(--font-mono); font-size: 30px; font-weight: 700;
+    letter-spacing: 1.5px; word-break: break-all;
+    box-shadow: 0 6px 20px rgba(52,199,89,0.32);
   }
-  .reveal-sub {
-    font-size: 13px; color: var(--text-3); margin-bottom: 10px;
+  .reveal-sub { font-size: 14px; color: var(--text-3); margin-bottom: 20px; }
+  .reveal-sub strong { color: var(--text); font-weight: 700; }
+
+  /* Chunkier than the modal buttons elsewhere: this is a one-handed tap on a phone,
+     outdoors, and it is the last thing standing between the person and their ride. */
+  .reveal-screen .m-actions { width: 100%; margin-top: 0; gap: 10px; }
+  .reveal-btn {
+    flex: 1; border-radius: 14px; padding: 15px 12px;
+    font-size: 15px; font-weight: 700;
   }
+  .reveal-btn.btn-sec { background: var(--track); border-color: transparent; color: var(--text-2); }
+  .reveal-btn.btn-sec:hover { background: var(--surface-3); color: var(--text); }
+  .reveal-btn.btn-pri { box-shadow: 0 4px 14px rgba(52,199,89,0.34); }
+
   .btn-copy { flex: 1; transition: background 0.15s, color 0.15s; }
+  /* Defined after .reveal-btn.btn-sec so the confirmed state still wins on the
+     reveal screen. Equal specificity, so source order is what decides it. */
   .btn-copy.copied {
     background: var(--green-light); color: var(--green-dark);
     border-color: var(--green-mid);
+  }
+
+  /* Narrow phones. This has to live here rather than in the SMALL PHONES block near the
+     top of the sheet: a media query adds no specificity, so an override placed before
+     the rule it overrides loses on source order and silently does nothing.
+     A longer code still wraps via word-break, but this keeps the everyday 8 to 12
+     character codes on one line. */
+  @media (max-width: 420px) {
+    .reveal-icon { font-size: 36px; }
+    .reveal-code { font-size: 25px; padding: 21px 14px; letter-spacing: 1px; }
+    .reveal-btn { padding: 14px 10px; font-size: 14.5px; }
   }
 
 `;
@@ -899,6 +972,51 @@ function groupByMonth(list, fallback) {
   return [...groups.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
 }
 
+// ─── DEVICE-LOCAL MEMORY ───
+// There is no identity in this app, so nothing per-person can be enforced. What can be
+// done is remembering things on the device, which is enough for the top-up button to
+// know it has already been pressed.
+//
+// localStorage throws rather than returning null in several real cases: Safari private
+// browsing, cookies blocked, quota exhausted. None of them should stop a staff member
+// using the tracker, so every access is wrapped and simply degrades to "this device
+// remembers nothing".
+function readLocal(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+function writeLocal(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* remembering is a nicety, never a requirement */ }
+}
+
+// A random per-device id, so the admin sees how many *people* are waiting rather than
+// how many times a button was tapped. It identifies a browser, not a person, holds no
+// personal data, and clearing site data just mints a new one.
+function getDeviceId() {
+  let id = readLocal(LS_DEVICE);
+  if (!id) {
+    // randomUUID needs a secure context, which rules it out on plain-http LAN testing.
+    id = (typeof crypto !== "undefined" && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2) + Date.now().toString(36);
+    writeLocal(LS_DEVICE, id);
+  }
+  return id;
+}
+
+// { monthKey, ts } for this device's last top-up request, or null if there isn't one.
+// Anything unparseable or hand-edited is treated as absent rather than trusted, so a
+// bad value can't leave the button permanently disabled.
+function readLastRequest() {
+  const raw = readLocal(LS_REQUEST);
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw);
+    if (v && typeof v.monthKey === "string" && typeof v.ts === "number") return v;
+    return null;
+  } catch { return null; }
+}
+
 // Write a log entry to Firestore only. onSnapshot keeps local state in sync (Fix #3).
 // Module-level because it closes over nothing but `logsRef`: that keeps it out of the
 // dependency array of the cleanup effect, which would otherwise re-run on
@@ -961,6 +1079,17 @@ export default function App() {
 
   // Activity log, synced from Firebase (lazy: only when Code Manager is open)
   const [actLog, setActLog] = useState([]);
+
+  // ── Top-up requests ──
+  // Synced for admin only. Unlike the log and release history this cannot be lazy on
+  // Code Manager, because the whole point is a badge visible on the main screen without
+  // opening anything. Staff never subscribe: they only ever write.
+  const [topupRequests, setTopupRequests] = useState([]);
+
+  // This device's last request, mirrored out of localStorage so the button still reads
+  // "Admin notified" after a reload instead of inviting a second tap.
+  const [lastRequest, setLastRequest] = useState(readLastRequest);
+  const [requestBusy, setRequestBusy] = useState(false);
 
   // Revealed code after successful Take (Fix #11)
   const [revealedCode, setRevealedCode] = useState(null);
@@ -1072,6 +1201,24 @@ export default function App() {
     }, err => console.error("release history listener failed:", err));
     return () => unsub();
   }, [codeManager]);
+
+  // Firebase real-time listener: top-up requests (admin only)
+  //
+  // Range-filtered on ts and ordered by the same field, exactly like the activity log,
+  // so this needs no composite index. The month is filtered client-side instead: adding
+  // an equality filter on monthKey next to orderBy("ts") would require one, and index
+  // deployment in this project is a manual console step.
+  useEffect(() => {
+    if (!isAdmin) return;
+    const cutoff = Date.now() - MONTH_MS;
+    const q = query(topupReqRef, where("ts", ">", cutoff), orderBy("ts", "desc"), limit(200));
+    const unsub = onSnapshot(q, snap => {
+      setTopupRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, err => console.error("top-up requests listener failed:", err));
+    // Dropped on exiting admin so a stale count can't reappear on the next login
+    // before the first snapshot lands.
+    return () => { unsub(); setTopupRequests([]); };
+  }, [isAdmin]);
 
   // Month boundary ticker. Nobody reloads this page: it sits open on the shared
   // terminal, so the switch from one month's codes to the next has to be noticed while
@@ -1250,6 +1397,53 @@ export default function App() {
     log("take", `${name} took ${code}`);
   };
 
+  // ── "We're out" ──
+  // The one thing a staff member can usefully do when the pool is empty. Deliberately a
+  // single tap with no name field: this fires at the exact moment someone is in a hurry
+  // and has just been told there is nothing for them, so anything more than one tap gets
+  // abandoned. The device id carries the only fact the admin needs, which is that this
+  // is one more person rather than one more tap.
+  //
+  // The cooldown is enforced on the device, not the server, and cannot be otherwise
+  // without real auth. Someone determined can clear their storage and ask again. That is
+  // an acceptable failure mode: the worst case is an inflated count on a screen that only
+  // ever prompts the admin to do something they already intended to do.
+  const requestTopup = async () => {
+    if (requestBusy || requestSent) return;
+    setRequestBusy(true);
+    const entry = { monthKey: nowMonth, ts: Date.now(), deviceId: getDeviceId() };
+    try {
+      await addDoc(topupReqRef, entry);
+      // Remembered only after the write is confirmed, so a failed request doesn't
+      // silently lock the button for the next six hours.
+      const mine = { monthKey: entry.monthKey, ts: entry.ts };
+      setLastRequest(mine);
+      writeLocal(LS_REQUEST, JSON.stringify(mine));
+    } catch (err) {
+      console.error("requestTopup failed:", err);
+      alert("Could not send the request. Please try again, or tell an admin directly.");
+    } finally {
+      setRequestBusy(false);
+    }
+  };
+
+  // Clearing is explicit rather than automatic on the next code being added. Adding codes
+  // and resolving the queue are not the same event: an admin often stages a future drop
+  // while people are still waiting on this month, and silently wiping the queue there
+  // would hide the very thing it exists to show.
+  const clearTopupRequests = async () => {
+    const ids = monthRequests.map(r => r.id);
+    if (!ids.length) return;
+    if (!confirm(`Clear ${ids.length} top-up request(s) for ${monthLabel(nowMonth)}?`)) return;
+    try {
+      await deleteIdsIn("topupRequests", ids);
+      log("request", `Cleared ${ids.length} top-up request(s) for ${monthLabelShort(nowMonth)}`);
+    } catch (err) {
+      console.error("clearTopupRequests failed:", err);
+      alert("Failed to clear the requests. Please try again.");
+    }
+  };
+
   const releaseCode = async (id) => {
     const code = releaseConfirm?.code;
     const by = releaseConfirm?.takenBy;
@@ -1293,15 +1487,17 @@ export default function App() {
 
   // Batched for the same reasons as addBulk: atomic per chunk, and it stays within
   // Firestore's 500-operation limit per batch. Takes ids rather than snapshots (unlike
-  // deleteDocsInChunks below) because every caller here works from the live `codes`
-  // array, so there's no getDocs round trip to get DocumentReferences from.
-  const deleteCodeIds = async (ids) => {
+  // deleteDocsInChunks below) because every caller here works from data already in
+  // state, so there's no getDocs round trip to get DocumentReferences from.
+  const deleteIdsIn = async (collName, ids) => {
     for (let i = 0; i < ids.length; i += 400) {
       const batch = writeBatch(db);
-      ids.slice(i, i + 400).forEach(id => batch.delete(doc(db, "codes", id)));
+      ids.slice(i, i + 400).forEach(id => batch.delete(doc(db, collName, id)));
       await batch.commit();
     }
   };
+
+  const deleteCodeIds = (ids) => deleteIdsIn("codes", ids);
 
   const bulkDelete = async () => {
     const ids = [...selectedCodes];
@@ -1410,7 +1606,7 @@ export default function App() {
   };
 
   const clearOldLogs = async () => {
-    if (!confirm("Delete all activity logs and release history older than 30 days? This cannot be undone.")) return;
+    if (!confirm("Delete all activity logs, release history, and top-up requests older than 30 days? This cannot be undone.")) return;
     const cutoff = Date.now() - MONTH_MS;
     try {
       // Activity log
@@ -1427,8 +1623,15 @@ export default function App() {
       const relSnap = await getDocs(relQ);
       const relCount = await deleteDocsInChunks(relSnap.docs);
 
-      log("delete", `Cleared ${logCount} old log entry(ies) and ${relCount} old release record(s), older than 30 days`);
-      alert(`✓ Deleted ${logCount} old log entries and ${relCount} old release records.`);
+      // Top-up requests. Cleared per month from the manager as they're answered, so this
+      // only catches ones from a month nobody got around to tidying. ts is a plain
+      // number, like activityLog, so the bound is a number too.
+      const reqQ = query(topupReqRef, where("ts", "<", cutoff));
+      const reqSnap = await getDocs(reqQ);
+      const reqCount = await deleteDocsInChunks(reqSnap.docs);
+
+      log("delete", `Cleared ${logCount} old log entry(ies), ${relCount} old release record(s), and ${reqCount} old top-up request(s), older than 30 days`);
+      alert(`✓ Deleted ${logCount} old log entries, ${relCount} old release records, and ${reqCount} old top-up requests.`);
     } catch (err) {
       console.error("Clear logs failed:", err);
       alert("Failed to clear logs. Try again.");
@@ -1544,6 +1747,29 @@ export default function App() {
   // rolls `nowMonth` over at midnight on the 1st.
   const expiry = monthExpiry(nowMonth);
 
+  // ── Top-up requests ──
+  // Scoped to the live month for the same reason codes are: an unanswered request from
+  // last month is history, not a queue, and the codes it was asking for no longer work.
+  const monthRequests = topupRequests.filter(r => r.monthKey === nowMonth);
+
+  // Counted by device, so one person tapping twice across two days reads as one person
+  // waiting. Falls back to the doc id for any request written without a device id, which
+  // counts it as its own person rather than merging unrelated requests into one.
+  const waitingCount = new Set(monthRequests.map(r => r.deviceId || r.id)).size;
+
+  // Whether this device has already asked. Evaluated at render rather than on a timer:
+  // any snapshot or interaction re-renders, so the worst case is a button that stays
+  // disabled a few minutes past its cooldown while nobody is looking at it.
+  const requestSent = !!lastRequest
+    && lastRequest.monthKey === nowMonth
+    && Date.now() - lastRequest.ts < REQUEST_COOLDOWN_MS;
+
+  // Offered whenever there is nothing left to claim, in the hero rather than the empty
+  // state, so it can't be hidden behind the Taken or All filter or a stray search term.
+  // Hidden from admin, who gets the waiting count instead of a button to notify
+  // themselves, and while offline, where the write would only fail.
+  const canRequestTopup = !loading && !connError && !isAdmin && avail === 0;
+
   // Empty-state copy. Month scoping introduces two cases that used to be impossible:
   // this month's drop hasn't been added yet, and everything on file is either staged for
   // a future month or already expired. Telling the two apart matters, because "no codes yet"
@@ -1606,6 +1832,11 @@ export default function App() {
                   <span className="pill-dot"></span>{stagedCodes.length} scheduled
                 </span>
               )}
+              {isAdmin && waitingCount > 0 && (
+                <span className="pill req" title={`${waitingCount} staff member(s) have asked for more codes this month`}>
+                  <span className="pill-dot"></span>{waitingCount} waiting
+                </span>
+              )}
             </div>
           </div>
         </nav>
@@ -1630,6 +1861,18 @@ export default function App() {
                     : "Waiting for this month's codes")
                 : expiry.text}
             </div>
+            {canRequestTopup && (
+              <button
+                className={`btn-topup${requestSent ? " sent" : ""}`}
+                onClick={requestTopup}
+                disabled={requestSent || requestBusy}
+              >
+                {requestSent ? "Admin notified ✓" : requestBusy ? "Sending…" : "Tell admin we're out"}
+              </button>
+            )}
+            {canRequestTopup && requestSent && (
+              <div className="topup-note">More codes get added when the admin sees this.</div>
+            )}
           </div>
 
           {/* ── TOOLBAR ── */}
@@ -1739,15 +1982,18 @@ export default function App() {
                 <div className="reveal-icon">🎉</div>
                 <div className="reveal-label">Your Code</div>
                 <div className="reveal-code">{revealedCode.code}</div>
-                <div className="reveal-sub">Assigned to <strong>{revealedCode.name}</strong>. Screenshot or note this down!</div>
-                <div className="m-actions" style={{ width: "100%" }}>
+                <div className="reveal-sub">Assigned to <strong>{revealedCode.name}</strong>.</div>
+                <div className="m-actions">
                   <button
-                    className={`btn-sec btn-copy${copied ? " copied" : ""}`}
+                    className={`btn-sec reveal-btn btn-copy${copied ? " copied" : ""}`}
                     onClick={() => copyRevealedCode(revealedCode.code)}
                   >
                     {copied ? "Copied ✓" : "Copy Code"}
                   </button>
-                  <button className="btn-pri green" onClick={() => { setTakeModal(null); setRevealedCode(null); setCopied(false); }}>Done</button>
+                  <button className="btn-pri green reveal-btn"
+                    onClick={() => { setTakeModal(null); setRevealedCode(null); setCopied(false); }}>
+                    Done
+                  </button>
                 </div>
               </div>
             ) : (
@@ -1812,6 +2058,31 @@ export default function App() {
               <div className="m-title">Code Manager</div>
               <div className="m-sub">Add, schedule, review, and remove codes.</div>
             </div>
+
+            {/* Staff waiting on codes. First section, above the add forms, because it is
+                the reason the manager is open at all when it appears. Absent entirely
+                when nobody is waiting, so the everyday layout is unchanged. */}
+            {monthRequests.length > 0 && (
+              <div className="mgr-section">
+                <div className="mgr-head">
+                  <span>Top-up Requests <span className="mgr-count">{waitingCount}</span></span>
+                </div>
+                <div className="exp-box">
+                  <div className="exp-main">
+                    <div className="exp-title">
+                      {waitingCount === 1
+                        ? "1 person is waiting for a code"
+                        : `${waitingCount} people are waiting for a code`}
+                    </div>
+                    <div className="exp-meta">
+                      {`Last asked ${formatTimeShort(monthRequests[0].ts)}. `}
+                      {`Add codes for ${monthLabel(nowMonth)} below to top up the pool, then clear this.`}
+                    </div>
+                  </div>
+                  <button className="btn-exp-clear" onClick={clearTopupRequests}>Clear</button>
+                </div>
+              </div>
+            )}
 
             {/* Drop month, applies to both add forms below */}
             <div className="mgr-section">

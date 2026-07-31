@@ -17,18 +17,27 @@ verified against the actual code, not assumed.
 
 ### File layout
 
-Only 7 source files. `src/App.jsx` is a **single component, ~2140 lines**:
+Only 7 source files. `src/App.jsx` is a **single component, ~2390 lines**:
 
-- Lines 1 to 39: imports, Firebase init, constants (`MONTH_MS`, `ADMIN_PIN`, `STATUS`)
-- Then one ~700-line CSS template literal, injected via `<style>{styles}</style>`
+- Top of file: imports, Firebase init, collection refs, constants (`MONTH_MS`,
+  `REQUEST_COOLDOWN_MS`, `LS_DEVICE`, `LS_REQUEST`, `ADMIN_PIN`, `STATUS`)
+- Then one ~730-line CSS template literal, injected via `<style>{styles}</style>`
 - After the CSS: module-level helpers `toMs`, `formatTime`, `formatTimeShort`, `csvSafe`,
   the month-scoping block (`monthKeyOf`, `currentMonthKey`, `shiftMonthKey`, `monthLabel`,
-  `monthLabelShort`, `partitionByMonth`, `groupByMonth`), and `log`
+  `monthLabelShort`, `partitionCodes`, `monthExpiry`, `maskCode`, `describeDrops`,
+  `groupByMonth`), the device-local block (`readLocal`, `writeLocal`, `getDeviceId`,
+  `readLastRequest`), and `log`
 - Then the `App` component: state, effects, actions, derived values, JSX
 
 `log` is module-level on purpose: it closes over nothing but `logsRef`, and keeping it out
 of the component means the cleanup effect doesn't take it as a dependency (an
 in-component arrow is a new identity every render, so the effect would re-run constantly).
+
+The device-local helpers are module-level for the same reason plus one more: **every
+`localStorage` access is wrapped in try/catch**, because it throws rather than returning
+null in Safari private browsing, with cookies blocked, and when quota is exhausted. None of
+those may stop a staff member using the tracker, so they degrade to "this device remembers
+nothing". Never call `localStorage` directly here, go through `readLocal`/`writeLocal`.
 
 Because the CSS occupies nearly half the file, **grep for symbols rather than trusting
 line numbers**, they shift on every change.
@@ -38,7 +47,7 @@ That's a deliberate decision, not an oversight. See "Decisions" below.
 
 ### Data model
 
-Three collections. **The field types are load-bearing. Get them wrong and queries silently break.**
+Four collections. **The field types are load-bearing. Get them wrong and queries silently break.**
 
 | Collection | Field | Type written | Written by |
 |---|---|---|---|
@@ -53,6 +62,9 @@ Three collections. **The field types are load-bearing. Get them wrong and querie
 | `releaseHistory` | `code`, `takenBy` | string | `releaseCode` |
 | | `takenAt` | Timestamp \| null (copied from the code doc) | |
 | | `releasedAt` | **Timestamp** (`serverTimestamp()`) | |
+| `topupRequests` | `monthKey` | **string** `"YYYY-MM"` | `requestTopup` |
+| | `ts` | **number** (`Date.now()`) | |
+| | `deviceId` | string (random, from `localStorage`) | |
 
 Note the deliberate inconsistency: `createdAt` and `ts` are plain numbers, but
 `takenAt` and `releasedAt` are Firestore Timestamps. `toMs()` normalises both when reading.
@@ -143,6 +155,50 @@ repo's error convention: it fires unprompted on load, so an error popup for a ba
 chore would just block a staff member who wants to grab a code. It `console.error`s and
 leaves the stale codes hidden. The manual admin equivalents (`clearStale`, `deleteDrop`,
 `labelUnlabelled`, `removeUnlabelled`) do alert, because a human clicked them.
+
+---
+
+## Top-up requests
+
+Closes the one loop the tool previously left open. Topping up mid-month is normal
+operation, but the *request* for it happened out of band: a message, or a tap on the
+shoulder. So an empty pool could sit empty simply because nobody told the admin, while the
+admin had no way to know demand existed.
+
+`requestTopup` writes one `topupRequests` doc per tap. The admin sees a `N waiting` pill in
+the topbar and a "Top-up Requests" section at the top of Code Manager.
+
+**Deliberately one tap, with no name field.** It fires at the exact moment someone is in a
+hurry and has just been told there is nothing for them. Anything more than one tap gets
+abandoned, and an abandoned request is worse than none because the admin still doesn't know.
+
+**Counted by device, not by tap.** `deviceId` is a random value in `localStorage`, so the
+admin sees "4 people are waiting" rather than "12 taps happened". It identifies a browser,
+not a person, holds nothing personal, and clearing site data mints a new one. Requests
+written without one fall back to counting as their own person, which over-counts rather
+than silently merging unrelated requests into one.
+
+**The six-hour cooldown is device-local and cannot be otherwise.** With no auth, rules
+cannot tell one device from another. Someone who clears their storage can ask again. That
+is acceptable here and the reason to be explicit about it: the blast radius is a wrong
+number on an admin screen and some junk docs that Clear Old Logs removes. Do not extend
+this pattern to anything where an inflated count would cost something.
+
+**Why six hours rather than a per-month lock.** A pool that empties, gets topped up, and
+empties again in the same month must be reportable the second time. That second report is
+the one that matters, and a per-month lock would swallow it.
+
+The button lives in `.hero`, not the empty state, so it cannot be hidden behind the Taken
+or All filter or a stray search term. It is suppressed for admin (who would be notifying
+themselves) and while `connError` is set (the write would only fail).
+
+**Clearing is explicit, never automatic on the next code being added.** Adding codes and
+resolving the queue are not the same event: an admin often stages a *future* drop while
+people are still waiting on this month, and silently wiping the queue there would hide the
+exact thing the feature exists to show.
+
+Requests are scoped to `nowMonth` on the render path, like codes. An unanswered request
+from last month is history, not a queue, and the codes it asked for no longer work.
 
 ### Duplicate detection is per month
 
@@ -314,6 +370,36 @@ print("BAD:", bad) if bad else print("stylesheet clean")
 EOF
 ```
 
+### One stylesheet means source order decides everything
+
+Every rule lives in one literal, so **a media query placed before the rule it overrides
+does nothing at all**. A media query adds no specificity; when specificity ties, source
+order wins, and `@media` blocks are not hoisted.
+
+This bit the reveal redesign. The `SMALL PHONES` block sits near the top of the sheet, with
+the main-screen rules it overrides (`.page`, `.hero`, `.t-row`, `.btn-take`), but the modal
+and reveal rules are ~400 lines further down. A `.reveal-code { font-size: 25px }` added to
+that early block was dead: the base `.reveal-code` came later and won at every width.
+
+It fails silently. Nothing warns, and it looks correct on a desktop viewport, where the
+override was never meant to apply.
+
+So: **put a phone override immediately after the rules it overrides**, not in the existing
+`SMALL PHONES` block, unless what you are overriding is already above it. There is now a
+second `@media (max-width: 420px)` block at the end of the sheet for the reveal screen, and
+that duplication is intentional.
+
+Verify an override actually applied rather than eyeballing it:
+
+```js
+await page.evaluate(() => getComputedStyle(document.querySelector(".reveal-code")).fontSize)
+// at a 375px viewport this must report the override, not the base value
+```
+
+The same trap applies to plain specificity ties within the sheet: `.btn-copy.copied` has to
+come after `.reveal-btn.btn-sec`, because both are two-class selectors and only order
+separates them. Moving either one changes which colour a copied button is.
+
 ### Verifying a UI change actually means running the bundle
 
 The gap that let this reach production: the redesign was checked by extracting the
@@ -432,14 +518,27 @@ work offline. Release (a plain `updateDoc`) can queue.
 
 ### Listeners
 
-Three `onSnapshot` listeners, all with `return () => unsub()` cleanup:
+Four `onSnapshot` listeners, all with `return () => unsub()` cleanup:
 
 1. `codes`: always on
 2. `activityLog`: lazy, only while Code Manager is open
 3. `releaseHistory`: lazy, only while Code Manager is open
+4. `topupRequests`: gated on `isAdmin`, **not** on Code Manager
 
 Keep the lazy pattern (`if (!codeManager) return;`), it exists to conserve free-tier quota.
-Only the `codes` listener sets the `connError` banner; the other two log to console only.
+Only the `codes` listener sets the `connError` banner; the others log to console only.
+
+`topupRequests` is gated differently on purpose: the whole point is a badge visible on the
+main screen without opening anything, so it cannot wait for Code Manager. Staff never
+subscribe to it, they only ever write, which keeps the cost to the one admin device. Its
+cleanup also clears the array, so a stale count can't flash on the next login before the
+first snapshot lands.
+
+Its query is range-filtered on `ts` and ordered by the same field, exactly like
+`activityLog`, so it needs **no composite index**. The month is filtered client-side
+instead. Adding `where("monthKey", "==", ...)` next to `orderBy("ts")` would require a
+composite index, and index deployment here is a manual console step, so that would be a
+silent break on first run rather than a local one.
 
 ### Defensive patterns worth keeping
 
@@ -518,8 +617,26 @@ Rebuilt from a supplied design. Worth knowing before changing any of it:
 - **`/logo.png` is the full SingBuild lockup**, rendered height-driven with `width: auto`, so
   it can be swapped for a different crop without touching the layout.
 
-The modals kept their existing styling. They share the same tokens so they still read as one
-app, but they were not part of the supplied design and have not been reworked.
+- **`.btn-topup` lives in the hero**, full width and blue, because when it appears it is the
+  only action on the screen worth taking. Its sent state is green-tinted rather than dimmed:
+  it is a confirmation, and a greyed-out button reads as a failure to someone who just
+  pressed it.
+
+**The reveal screen was rebuilt from a supplied mockup.** The code is now the hero: a solid
+`--green` block with white text, 30px (25px under 420px), with the label above and
+`Assigned to <name>.` below, then a grey Copy Code next to a green Done. Two things about it
+are deliberate:
+
+- **It stays monospace**, the only monospace on the screen. Grab codes get retyped into
+  another app, so `0` against `O` and `1` against `I` have to be distinguishable.
+- **The mockup has no "screenshot this" reminder, no expiry date, and no Grab redemption
+  hint,** and the implementation follows the mockup. Dropping the reminder is safe only
+  because a claimed code renders unmasked in the list, so it is recoverable by searching
+  your own name. If masking is ever extended to claimed codes, that reminder has to come
+  back, or the code becomes genuinely unrecoverable once the modal closes.
+
+The other modals kept their existing styling. They share the same tokens so they still read
+as one app, but they were not part of the supplied design and have not been reworked.
 
 **No server-side scheduler, deliberately.** The monthly rollover is a client-side effect,
 not a Cloud Function or Vercel Cron. Adding one means `firebase-admin`, a service-account
@@ -545,6 +662,12 @@ clean win: it would no longer depend on someone having the app open.
    same fix. Worth knowing before staging a drop weeks ahead.
 3. **Deployed rules can't be verified from the repo.** `firestore.rules` is the intended
    state; the live rules are whatever is in the Firebase console. Keep them in sync manually.
+4. **`topupRequests` writes are unauthenticated and unthrottled.** Same root cause as 1 and
+   2: rules cannot identify a device, so the six-hour cooldown is client-side only and
+   anyone can write unlimited request docs. Contained on purpose: the collection is
+   write-only for staff, holds nothing sensitive, feeds one advisory number on an admin
+   screen, and is pruned by Clear Old Logs. Worth re-checking if anything ever starts
+   *acting* on that count automatically rather than just displaying it.
 
 ---
 
@@ -605,6 +728,13 @@ whitelist rejects the new shape. Publish the rules first: they are backwards-com
 with the currently deployed app in a way the reverse is not (a new *allowed* key is
 harmless to a client that never sends it).
 
+**A brand-new collection is the same hazard, and easier to miss.** The catch-all
+`match /{document=**} { allow read, write: if false; }` denies any collection without its
+own block, so shipping app code that writes `topupRequests` before publishing the rules
+means every request fails with `permission-denied`. It fails quietly for staff (one alert
+they will ignore) and invisibly for admin (a count that simply never appears), so nothing
+about it looks like a rules problem. Publish first.
+
 Symptom of getting this wrong: adding a code shows "Failed to add code", and the console
 shows `permission-denied` on `codes`.
 
@@ -615,6 +745,16 @@ shows `permission-denied` on `codes`.
 - Admin: add single code, bulk add (**check order is preserved**), duplicate is skipped
 - Bulk delete, release a code → **appears in Release History**
 - Export CSV → opens correctly in Excel
+- **Top-up request:** claim every code so the pool is empty → the hero offers "Tell admin
+  we're out" → tap it → it becomes "Admin notified" → **reload and it is still "Admin
+  notified"** (this is what proves the `localStorage` mirror works). Log in as admin → a
+  `N waiting` pill appears and Code Manager shows Top-up Requests at the top → add a code →
+  the request is **still there** (clearing is explicit) → Clear → the pill disappears.
+- **Top-up request with storage unavailable:** repeat the above in Safari private browsing
+  or with cookies blocked. The request must still send; only the "already asked" memory is
+  lost, so the button returns to its normal state instead of the page breaking.
+- **Reveal screen at 375px width:** the code must be 25px and the everyday 8 to 12 character
+  codes on one line (see the source-order trap in the CSS section)
 - **Offline (airplane mode):** Take shows a clear error, not a frozen button;
   Add shows "Failed to add code" **and the typed text is still in the box**
 
