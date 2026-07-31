@@ -43,8 +43,10 @@ const styles = `
   html { -webkit-text-size-adjust: 100%; }
 
   :root {
-    --bg: #f2f2f7;
+    --bg: #eeeef2;
     --surface: #ffffff;
+    --track: #e4e4e9;          /* segmented control + search field */
+
     --surface-raised: rgba(255,255,255,0.9);
     --surface-2: rgba(116,116,128,0.08);
     --surface-3: rgba(116,116,128,0.12);
@@ -59,6 +61,8 @@ const styles = `
     --blue-mid: rgba(0,122,255,0.18);
     --green: #34c759;
     --green-dark: #248a3d;
+    --green-strong: #1ea94d;   /* hero figure: passes 3:1 at large sizes */
+
     --green-light: rgba(52,199,89,0.12);
     --green-mid: rgba(52,199,89,0.22);
     --red: #ff3b30;
@@ -66,6 +70,8 @@ const styles = `
     --red-light: rgba(255,59,48,0.1);
     --red-mid: rgba(255,59,48,0.18);
     --orange: #ff9500;
+    --orange-dark: #b26a00;
+
     --orange-light: rgba(255,149,0,0.1);
     --r-xs: 8px;
     --r-sm: 10px;
@@ -93,216 +99,147 @@ const styles = `
     letter-spacing: -0.1px;
   }
 
-  .page { min-height: 100vh; display: flex; flex-direction: column; }
+  .page {
+    min-height: 100vh;
+    display: flex; flex-direction: column;
+    width: 100%; max-width: 560px; margin: 0 auto;
+    padding: 0 16px 44px;
+    text-align: left;   /* index.css centres #root */
+  }
 
-  /* ─── TOPBAR ─── */
+  /* ─── HEADER ─── */
   .topbar {
-    background: rgba(242,242,247,0.82);
-    backdrop-filter: saturate(200%) blur(24px);
-    -webkit-backdrop-filter: saturate(200%) blur(24px);
-    border-bottom: 1px solid var(--border);
-    padding: 0 24px;
-    height: 52px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: sticky;
-    top: 0;
-    z-index: 50;
-  }
-
-  .topbar-left { display: flex; align-items: center; gap: 10px; }
-
-  .conn-banner {
-    background: var(--red-light); color: var(--red); border-bottom: 1px solid var(--red-mid);
-    padding: 8px 24px; font-size: 13px; text-align: center;
-  }
-  .conn-banner button {
-    margin-left: 10px; background: none; border: 1px solid var(--red); color: var(--red);
-    border-radius: var(--r-xs); padding: 2px 10px; font-size: 12.5px; cursor: pointer;
+    display: flex; align-items: center; gap: 14px;
+    padding: 22px 4px 20px;
   }
 
   .logo-wrap {
-    position: relative;
-    width: 32px; height: 32px;
-    border-radius: var(--r-sm);
-    overflow: hidden;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    box-shadow: var(--sh-sm);
-    flex-shrink: 0;
-    cursor: pointer;
-    padding: 0;
-    font: inherit;
+    height: 48px; width: auto;
+    background: none; border: none; padding: 0;
+    flex-shrink: 0; cursor: pointer; font: inherit;
+    display: flex; align-items: center;
     transition: transform 0.18s var(--ease-spring), opacity 0.15s;
     -webkit-tap-highlight-color: transparent;
   }
-  .logo-wrap:hover { transform: scale(1.06); }
-  .logo-wrap:active { transform: scale(0.93); opacity: 0.8; }
+  .logo-wrap:hover { transform: scale(1.05); }
+  .logo-wrap:active { transform: scale(0.94); opacity: 0.8; }
 
-  .logo-img { width: 100%; height: 100%; object-fit: contain; padding: 3px; display: block; }
+  /* Height-driven with auto width, so /logo.png can be swapped for a wider
+     wordmark version without touching the layout. */
+  .logo-img { height: 100%; width: auto; max-width: 104px; object-fit: contain; display: block; }
 
-  .brand { display: flex; flex-direction: column; gap: 0; }
-  .brand-name { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.25; letter-spacing: -0.3px; }
-  .brand-sub { font-size: 10.5px; color: var(--text-4); font-weight: 400; letter-spacing: 0.1px; }
-
-  .topbar-right { display: flex; align-items: center; gap: 6px; }
+  .brand { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+  .brand-name {
+    font-size: 21px; font-weight: 700; color: var(--text);
+    line-height: 1.15; letter-spacing: -0.6px;
+  }
+  .brand-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
   .pill {
     display: inline-flex; align-items: center; gap: 5px;
-    border-radius: 20px; padding: 4px 10px;
-    font-size: 11px; font-weight: 600; letter-spacing: 0.2px;
-    border: 1px solid transparent;
+    border-radius: 20px; padding: 5px 11px;
+    font-size: 12.5px; font-weight: 600; letter-spacing: -0.1px;
+    border: 1px solid transparent; white-space: nowrap;
   }
-  .pill-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
-  .pill.live { background: var(--green-light); border-color: var(--green-mid); color: var(--green-dark); }
+  .pill-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .pill.month { background: var(--track); color: var(--text-3); }
+  .pill.live { background: var(--track); color: var(--green-strong); }
   .pill.live .pill-dot { background: var(--green); animation: blink 2s infinite; }
   .pill.admin { background: var(--red-light); border-color: var(--red-mid); color: var(--red-dark); }
   .pill.admin .pill-dot { background: var(--red); }
-  .pill.month { background: var(--surface-2); border-color: var(--border-mid); color: var(--text-3); }
   .pill.sched { background: rgba(175,82,222,0.10); border-color: rgba(175,82,222,0.28); color: #8e34c4; }
   .pill.sched .pill-dot { background: #af52de; }
   @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
 
-  /* ─── MAIN ─── */
-  .main { flex: 1; padding: 20px 24px 40px; max-width: 1080px; margin: 0 auto; width: 100%; }
-
-  /* ─── STAT CARDS ─── */
-  .stat-row {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    margin-bottom: 12px;
+  .conn-banner {
+    background: var(--red-light); color: var(--red);
+    border: 1px solid var(--red-mid); border-radius: var(--r-lg);
+    padding: 11px 16px; font-size: 13.5px; text-align: center;
+    margin-bottom: 14px;
+  }
+  .conn-banner button {
+    margin-left: 10px; background: none; border: 1px solid var(--red); color: var(--red);
+    border-radius: var(--r-xs); padding: 3px 11px; font-size: 12.5px; cursor: pointer;
+    font-family: var(--font); font-weight: 600;
   }
 
-  .stat-card {
-    background: var(--surface);
-    border-radius: var(--r);
-    padding: 9px 12px;
-    border: 1px solid var(--border);
-    box-shadow: var(--sh-sm);
-    display: flex; flex-direction: column; gap: 3px;
-    transition: box-shadow 0.2s, transform 0.2s;
-    position: relative; overflow: hidden;
-  }
-  .stat-card::before {
-    content: "";
-    position: absolute; top: 0; left: 0; right: 0;
-    height: 2px; border-radius: 2px;
-  }
-  .stat-card.total::before { background: linear-gradient(90deg, #636366, #aeaeb2); }
-  .stat-card.avail::before { background: linear-gradient(90deg, var(--green), #5ec96b); }
-  .stat-card.taken::before { background: linear-gradient(90deg, var(--red), #ff6961); }
+  .main { flex: 1; display: flex; flex-direction: column; }
 
-  .stat-icon {
-    width: 22px; height: 22px; border-radius: 6px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 11px;
+  /* ─── AVAILABILITY HERO ─── */
+  /* Replaces the three Total/Available/Taken stat cards. Staff only ever asked
+     one question here: is there a code left for me. */
+  .hero {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-2xl); box-shadow: var(--sh);
+    padding: 26px 22px; margin-bottom: 16px; text-align: center;
   }
-  .stat-icon.total { background: var(--surface-2); }
-  .stat-icon.avail { background: var(--green-light); }
-  .stat-icon.taken { background: var(--red-light); }
-
-  .stat-num {
-    font-size: 20px; font-weight: 700; line-height: 1;
-    letter-spacing: -1px;
+  .hero-num {
+    font-size: 30px; font-weight: 800; line-height: 1.1;
+    letter-spacing: -1.1px; color: var(--green-strong);
   }
-  .stat-num.total { color: var(--text); }
-  .stat-num.avail { color: var(--green-dark); }
-  .stat-num.taken { color: var(--red); }
-
-  .stat-label { font-size: 10px; font-weight: 500; color: var(--text-4); letter-spacing: 0.1px; }
+  .hero-num.none { color: var(--text-3); }
+  .hero-sub { font-size: 15px; color: var(--text-3); margin-top: 7px; letter-spacing: -0.2px; }
+  .hero-sub.urgent { color: var(--orange-dark); font-weight: 600; }
 
   /* ─── TOOLBAR ─── */
-  .toolbar {
-    display: flex; align-items: center; gap: 8px;
-    margin-bottom: 12px; flex-wrap: wrap;
-  }
+  .toolbar { display: flex; flex-direction: column; margin-bottom: 16px; }
 
   .seg-ctrl {
-    display: flex;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r-sm);
-    padding: 2px; gap: 1px;
-    box-shadow: var(--sh-sm);
-    flex-shrink: 0;
+    display: flex; width: 100%;
+    background: var(--track); border-radius: 14px;
+    padding: 4px; gap: 2px;
   }
-
   .seg {
-    background: none; border: none;
-    border-radius: 7px;
-    font-family: var(--font); font-size: 12.5px; font-weight: 500;
-    color: var(--text-3); padding: 5px 14px; cursor: pointer;
-    transition: all 0.16s; white-space: nowrap;
-    -webkit-tap-highlight-color: transparent;
-    position: relative;
+    flex: 1; background: none; border: none; border-radius: 11px;
+    font-family: var(--font); font-size: 14.5px; font-weight: 600;
+    color: var(--text-2); padding: 9px 6px; cursor: pointer;
+    transition: background 0.18s, color 0.18s; white-space: nowrap;
+    -webkit-tap-highlight-color: transparent; position: relative;
   }
-  .seg.active {
-    background: var(--surface-2);
-    color: var(--text);
-    font-weight: 600;
-    box-shadow: var(--sh-sm);
+  .seg.active { background: var(--blue); color: #fff; box-shadow: 0 1px 5px rgba(0,122,255,0.35); }
+  .seg:not(.active):hover { color: var(--text); }
+  /* Hairline between two inactive segments */
+  .seg:not(.active) + .seg:not(.active)::before {
+    content: ""; position: absolute; left: -2px; top: 24%; bottom: 24%;
+    width: 1px; background: var(--border-mid);
   }
-  .seg:not(.active):hover { color: var(--text-2); }
 
-  .search-box {
-    flex: 1; min-width: 160px; position: relative;
-  }
+  .search-box { position: relative; width: 100%; margin-top: 10px; }
   .search-ico {
-    position: absolute; left: 10px; top: 50%;
-    transform: translateY(-50%); color: var(--text-4);
+    position: absolute; left: 15px; top: 50%;
+    transform: translateY(-50%); color: var(--text-3);
     pointer-events: none; display: flex;
   }
   .search-inp {
-    width: 100%; background: var(--surface);
-    border: 1px solid var(--border); border-radius: var(--r-sm);
-    padding: 7px 12px 7px 30px;
-    font-family: var(--font); font-size: 13px;
-    color: var(--text); outline: none;
-    transition: all 0.16s; box-shadow: var(--sh-sm);
+    width: 100%; background: var(--track);
+    border: 1.5px solid transparent; border-radius: 14px;
+    padding: 12px 14px 12px 41px;
+    font-family: var(--font); font-size: 15px; color: var(--text);
+    outline: none; transition: background 0.16s, border-color 0.16s;
     -webkit-appearance: none;
   }
-  .search-inp:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-light), var(--sh-sm); }
-  .search-inp::placeholder { color: var(--text-4); }
+  .search-inp:focus { border-color: var(--blue); background: var(--surface); }
+  .search-inp::placeholder { color: var(--text-3); }
 
   .btn-mgr {
-    display: inline-flex; align-items: center; gap: 5px;
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    width: 100%; margin-top: 10px;
     background: var(--text); color: #fff; border: none;
-    border-radius: var(--r-sm); font-family: var(--font);
-    font-size: 12.5px; font-weight: 600; padding: 7px 14px;
-    cursor: pointer; transition: all 0.16s; flex-shrink: 0;
-    box-shadow: var(--sh-sm); -webkit-tap-highlight-color: transparent;
+    border-radius: 14px; font-family: var(--font);
+    font-size: 14px; font-weight: 600; padding: 12px;
+    cursor: pointer; transition: background 0.16s, transform 0.16s;
+    -webkit-tap-highlight-color: transparent;
   }
-  .btn-mgr:hover { background: #3a3a3c; box-shadow: var(--sh); }
-  .btn-mgr:active { transform: scale(0.97); }
+  .btn-mgr:hover { background: #3a3a3c; }
+  .btn-mgr:active { transform: scale(0.985); }
 
-  /* ─── TABLE ─── */
-  .card {
-    background: var(--surface);
-    border-radius: var(--r-xl);
-    border: 1px solid var(--border);
-    overflow: hidden;
-    box-shadow: var(--sh);
-  }
-
-  .t-head {
-    display: grid;
-    grid-template-columns: 40px 1fr 155px 155px 110px;
-    padding: 8px 20px;
-    background: rgba(116,116,128,0.04);
-    border-bottom: 1px solid var(--border);
-  }
-  .t-h {
-    font-size: 10px; font-weight: 600; color: var(--text-4);
-    text-transform: uppercase; letter-spacing: 0.8px;
-  }
-
-  .t-body { display: flex; flex-direction: column; }
-
-  /* Filter-switch fade wrapper */
+  /* ─── CODE LIST ─── */
+  /* Each code is its own card. `.card` is kept as a transparent wrapper so the
+     loading and empty states can slot into the same place in the markup. */
+  .card { background: none; border: none; box-shadow: none; }
+  .t-body { display: flex; flex-direction: column; gap: 12px; }
   .t-body-inner {
-    display: flex; flex-direction: column;
+    display: flex; flex-direction: column; gap: 12px;
     animation: listFadeIn 0.22s var(--ease-out) both;
   }
   @keyframes listFadeIn {
@@ -311,33 +248,38 @@ const styles = `
   }
 
   .t-row {
-    display: grid;
-    grid-template-columns: 40px 1fr 155px 155px 110px;
-    align-items: center;
-    padding: 12px 20px;
-    border-bottom: 1px solid rgba(60,60,67,0.06);
-    transition: background 0.15s;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 18px; padding: 16px 18px;
+    box-shadow: var(--sh-sm);
+    transition: box-shadow 0.18s;
     animation: rowIn 0.28s var(--ease-out) both;
   }
   @keyframes rowIn {
     from { opacity: 0; transform: translateY(5px); }
     to   { opacity: 1; transform: translateY(0); }
   }
-  .t-row:last-child { border-bottom: none; }
-  .t-row:hover { background: rgba(116,116,128,0.04); }
-  .t-row.is-taken { background: rgba(116,116,128,0.02); }
-  .t-row.is-optimistic { opacity: 0.55; pointer-events: none; }
+  .t-row:hover { box-shadow: var(--sh); }
+  .t-row.is-taken { box-shadow: none; background: rgba(255,255,255,0.6); }
+  .t-row.is-optimistic { opacity: 0.5; pointer-events: none; }
 
-  .t-num { font-size: 11px; color: var(--text-4); font-weight: 500; font-family: var(--font-mono); }
-  .t-code {
-    font-size: 13.5px; font-weight: 600;
-    color: var(--text); letter-spacing: 0.1px;
-    font-family: var(--font-mono);
+  .t-code, .t-code-masked {
+    flex: 1; min-width: 0;
+    font-family: var(--font-mono); font-size: 19px; font-weight: 600;
+    color: var(--text); letter-spacing: 1px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .t-row.is-taken .t-code { text-decoration: line-through; color: var(--text-4); }
-  .t-staff { font-size: 13px; color: var(--text-2); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .t-time { font-size: 11.5px; color: var(--text-4); font-family: var(--font-mono); }
-  .t-act { display: flex; align-items: center; gap: 6px; }
+  .t-row.is-taken .t-code {
+    color: var(--text-4); text-decoration: line-through;
+    font-size: 17px; letter-spacing: 0.4px;
+  }
+  .t-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; min-width: 0; }
+  .t-staff {
+    font-size: 13.5px; font-weight: 600; color: var(--text-2);
+    max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .t-time { font-size: 11.5px; color: var(--text-4); font-family: var(--font-mono); white-space: nowrap; }
+  .t-act { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
   /* Badges */
   .bdg {
@@ -357,120 +299,74 @@ const styles = `
 
   /* Row action buttons */
   .btn-take {
-    background: var(--green); color: #fff; border: none;
-    border-radius: var(--r-sm); font-family: var(--font);
-    font-size: 12px; font-weight: 600; padding: 6px 14px;
-    cursor: pointer; transition: all 0.16s;
-    box-shadow: 0 1px 3px rgba(52,199,89,0.25);
+    background: var(--blue); color: #fff; border: none;
+    border-radius: 12px; font-family: var(--font);
+    font-size: 15px; font-weight: 600; padding: 11px 26px;
+    cursor: pointer; transition: background 0.16s, transform 0.16s, box-shadow 0.16s;
+    box-shadow: 0 1px 4px rgba(0,122,255,0.32);
     -webkit-tap-highlight-color: transparent;
   }
-  .btn-take:hover { background: #2db44e; box-shadow: 0 3px 10px rgba(52,199,89,0.3); }
+  .btn-take:hover { background: #0069e0; box-shadow: 0 3px 12px rgba(0,122,255,0.36); }
   .btn-take:active { transform: scale(0.96); }
 
   .btn-release {
     background: none; border: 1px solid var(--border-mid);
-    border-radius: var(--r-sm); font-family: var(--font);
-    font-size: 12px; font-weight: 500; color: var(--text-3);
-    padding: 6px 12px; cursor: pointer; transition: all 0.16s;
+    border-radius: 12px; font-family: var(--font);
+    font-size: 13px; font-weight: 600; color: var(--text-3);
+    padding: 9px 15px; cursor: pointer; transition: all 0.16s;
     -webkit-tap-highlight-color: transparent;
   }
   .btn-release:hover { border-color: var(--red-mid); color: var(--red); background: var(--red-light); }
 
   .btn-taken-lock {
-    font-size: 11.5px; font-weight: 500; color: var(--text-4);
-    padding: 6px 10px; border-radius: var(--r-sm);
-    background: var(--surface-2); border: 1px solid var(--border);
-    display: inline-block; letter-spacing: 0.1px;
+    font-size: 12.5px; font-weight: 600; color: var(--text-4);
+    padding: 8px 13px; border-radius: 12px;
+    background: var(--surface-2);
+    display: inline-block; letter-spacing: -0.1px;
   }
 
-  /* Empty / loading states */
-  .t-empty {
-    padding: 64px 24px; text-align: center;
+  /* ─── EMPTY / LOADING ─── */
+  /* Their own card, since the list itself no longer has a container */
+  .t-empty, .t-loading {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-2xl); box-shadow: var(--sh-sm);
+    padding: 52px 24px; text-align: center;
     display: flex; flex-direction: column; align-items: center; gap: 8px;
   }
   .t-empty-icon {
-    width: 44px; height: 44px; border-radius: 50%;
-    background: var(--surface-2);
+    width: 46px; height: 46px; border-radius: 50%;
+    background: var(--track);
     display: flex; align-items: center; justify-content: center;
-    font-size: 20px; margin-bottom: 2px;
+    font-size: 21px; margin-bottom: 4px;
   }
-  .t-empty-title { font-size: 14px; font-weight: 600; color: var(--text-3); }
-  .t-empty-sub { font-size: 12.5px; color: var(--text-4); }
+  .t-empty-title { font-size: 16px; font-weight: 700; color: var(--text-2); letter-spacing: -0.3px; }
+  .t-empty-sub { font-size: 13.5px; color: var(--text-3); line-height: 1.5; max-width: 320px; }
 
-  .t-loading {
-    padding: 64px 24px; text-align: center;
-    display: flex; flex-direction: column; align-items: center; gap: 10px;
-  }
   .spinner {
-    width: 22px; height: 22px;
-    border: 2px solid var(--surface-3);
+    width: 24px; height: 24px;
+    border: 2.5px solid var(--surface-3);
     border-top-color: var(--blue);
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .t-loading-text { font-size: 13px; color: var(--text-4); }
+  .t-loading-text { font-size: 13.5px; color: var(--text-3); }
 
-  /* ─── MOBILE CARD VIEW ─── */
-  @media (max-width: 640px) {
-    .main { padding: 14px 14px 32px; }
-    .topbar { padding: 0 16px; height: 48px; }
-    .brand-sub { display: none; }
-    .stat-num { font-size: 18px; letter-spacing: -0.8px; }
-
-    /* Hide table header */
-    .t-head { display: none; }
-
-    /* Card layout for each row */
-    .t-row {
-      display: flex; flex-direction: column;
-      gap: 0; padding: 0; align-items: stretch;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
-      border-radius: 0;
-    }
-    .t-row:last-child { border-bottom: none; }
-    .t-row:hover { background: var(--surface); }
-
-    /* Card inner layout */
-    .t-row-mobile-inner {
-      display: flex; align-items: center;
-      padding: 13px 16px; gap: 12px;
-    }
-
-    /* Code pill on mobile */
-    .t-num { display: none; }
-    .t-code {
-      font-size: 15px; font-weight: 700;
-      letter-spacing: 0.3px;
-    }
-    .t-row.is-taken .t-code {
-      text-decoration: line-through;
-      color: var(--text-4);
-    }
-
-    /* Staff + time stacked */
-    .t-mobile-info {
-      display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0;
-    }
-    .t-staff {
-      font-size: 13px; font-weight: 500; color: var(--text-2);
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .t-time { font-size: 11px; color: var(--text-4); }
-
-    /* Hide desktop columns that get restructured */
-    .t-desktop-only { display: none; }
-
-    .t-act { margin-top: 0; }
-
-    /* Card wrapper for mobile */
-    .card { border-radius: var(--r-lg); }
-
-    /* Toolbar wraps nicely */
-    .toolbar { gap: 6px; }
-    .search-box { min-width: 0; width: 100%; order: 3; flex-basis: 100%; }
-    .btn-mgr { font-size: 12px; padding: 7px 11px; }
+  /* ─── SMALL PHONES ─── */
+  @media (max-width: 420px) {
+    .page { padding: 0 12px 36px; }
+    .topbar { gap: 11px; padding: 18px 2px 16px; }
+    .logo-wrap { height: 40px; }
+    .brand-name { font-size: 18.5px; }
+    .brand { gap: 6px; }
+    .hero { padding: 22px 16px; }
+    .hero-num { font-size: 25px; letter-spacing: -0.9px; }
+    .hero-sub { font-size: 14px; }
+    .seg { font-size: 13.5px; padding: 8px 4px; }
+    .search-inp { font-size: 14.5px; }
+    .t-row { padding: 14px 15px; gap: 10px; }
+    .t-code, .t-code-masked { font-size: 17px; letter-spacing: 0.8px; }
+    .btn-take { padding: 10px 20px; font-size: 14.5px; }
   }
 
   /* ─── OVERLAY / MODAL ─── */
@@ -813,13 +709,6 @@ const styles = `
   .btn-clear-logs:hover { background: rgba(255, 159, 64, 0.2); border-color: rgba(255, 159, 64, 0.35); }
   .btn-clear-logs:active { transform: scale(0.98); }
 
-  /* Masked code in table */
-  .t-code-masked {
-    font-size: 13.5px; font-weight: 600;
-    color: var(--text-4); letter-spacing: 0.1px;
-    font-family: var(--font-mono);
-  }
-
   /* Code reveal screen inside Take modal */
   .reveal-screen {
     display: flex; flex-direction: column; align-items: center;
@@ -847,19 +736,6 @@ const styles = `
     border-color: var(--green-mid);
   }
 
-  /* Mobile info block, hidden on desktop */
-  .t-mobile-info { display: none; }
-  @media (max-width: 640px) {
-    .t-mobile-info { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
-    .t-desktop-only { display: none !important; }
-    .t-row {
-      display: flex !important;
-      flex-direction: row !important;
-      align-items: center !important;
-      padding: 12px 16px !important;
-      gap: 10px !important;
-    }
-  }
 `;
 
 // Handles both plain ms numbers (from optimistic state) and Firestore Timestamp objects (from onSnapshot)
@@ -965,6 +841,38 @@ function partitionCodes(list, month) {
     else stale.push(c);
   });
   return { live, staged, stale, unlabelled };
+}
+
+// How much of this month is left, for the line under the availability figure. Codes
+// stop working when the month ends, so a countdown is more use than a bare date: it is
+// the difference between "plenty of time" and "use it today".
+//
+// Counts whole days remaining, so on the last day of the month it reads "today". Built
+// from the local clock for the same reason as monthKeyOf.
+function monthExpiry(month) {
+  const [y, m] = month.split("-").map(Number);
+  if (!y || !m) return { text: "", urgent: false };
+  const last = new Date(y, m, 0);            // day 0 of next month is the last of this one
+  const label = last.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const now = new Date();
+  // Only meaningful while `month` is the month we are actually in, which it always is
+  // on the render path. Fall back to the plain date otherwise.
+  if (monthKeyOf(now) !== month) return { text: `Valid until ${label}`, urgent: false };
+  const days = last.getDate() - now.getDate();
+  if (days <= 0) return { text: `Expire today (${label})`, urgent: true };
+  if (days === 1) return { text: `Expire tomorrow (${label})`, urgent: true };
+  return { text: `Expire in ${days} days (${label})`, urgent: days <= 3 };
+}
+
+// Masks an unclaimed code. Shows enough of the prefix to tell codes apart in a list
+// while keeping the rest unguessable, and never more than half the string, so a short
+// sequential code like "SB-001" does not end up effectively printed in full.
+//
+// This is presentational only. The full value is already on the device, because the
+// listener downloads the whole collection (known risk #2 in the steering doc).
+function maskCode(code) {
+  const visible = Math.min(5, Math.ceil(code.length / 2));
+  return code.slice(0, visible) + "\u2022".repeat(Math.max(code.length - visible, 1));
 }
 
 // Human-readable list of the drops a set of codes came from, for log lines and the
@@ -1624,9 +1532,14 @@ export default function App() {
     return true;
   });
 
+  // The old three stat cards needed a `taken` count too. The availability hero states
+  // it as "N of M available", so the third number was dropped rather than left unused.
   const total = merged.length;
   const avail = merged.filter(c => c.status === STATUS.AVAILABLE).length;
-  const taken = merged.filter(c => c.status === STATUS.TAKEN).length;
+
+  // Recomputed every render, which is what keeps the countdown honest once the ticker
+  // rolls `nowMonth` over at midnight on the 1st.
+  const expiry = monthExpiry(nowMonth);
 
   // Empty-state copy. Month scoping introduces two cases that used to be impossible:
   // this month's drop hasn't been added yet, and everything on file is either staged for
@@ -1659,40 +1572,38 @@ export default function App() {
       <style>{styles}</style>
       <div className="page">
 
-        {/* ── TOPBAR ── */}
+        {/* ── HEADER ── */}
         <nav className="topbar">
-          <div className="topbar-left">
-            <button
-              type="button"
-              className="logo-wrap"
-              onClick={() => isAdmin ? setIsAdmin(false) : setPinModal(true)}
-              title={isAdmin ? "Exit Admin" : "Admin Login"}
-              aria-label={isAdmin ? "Exit Admin" : "Admin Login"}
-            >
-              <img src="/logo.png" alt="Logo" className="logo-img" />
-            </button>
-            <div className="brand">
-              <span className="brand-name">SB Grab Code Tracker</span>
+          <button
+            type="button"
+            className="logo-wrap"
+            onClick={() => isAdmin ? setIsAdmin(false) : setPinModal(true)}
+            title={isAdmin ? "Exit Admin" : "Admin Login"}
+            aria-label={isAdmin ? "Exit Admin" : "Admin Login"}
+          >
+            <img src="/logo.png" alt="SingBuild" className="logo-img" />
+          </button>
+          <div className="brand">
+            <span className="brand-name">SB Grab Code Tracker</span>
+            <div className="brand-meta">
+              {/* Codes are month-scoped, so which month you're looking at is never implicit */}
+              <span className="pill month" title={`Showing codes for ${monthLabel(nowMonth)}`}>
+                {monthLabelShort(nowMonth)}
+              </span>
+              <span className="pill live">
+                <span className="pill-dot"></span>Live
+              </span>
+              {isAdmin && (
+                <span className="pill admin">
+                  <span className="pill-dot"></span>Admin
+                </span>
+              )}
+              {isAdmin && stagedCodes.length > 0 && (
+                <span className="pill sched" title={`${stagedCodes.length} code(s) staged for a future month`}>
+                  <span className="pill-dot"></span>{stagedCodes.length} scheduled
+                </span>
+              )}
             </div>
-          </div>
-          <div className="topbar-right">
-            {/* Codes are month-scoped, so which month you're looking at is never implicit */}
-            <span className="pill month" title={`Showing codes for ${monthLabel(nowMonth)}`}>
-              {monthLabelShort(nowMonth)}
-            </span>
-            {isAdmin && stagedCodes.length > 0 && (
-              <span className="pill sched" title={`${stagedCodes.length} code(s) staged for a future month`}>
-                <span className="pill-dot"></span>{stagedCodes.length} scheduled
-              </span>
-            )}
-            <span className="pill live">
-              <span className="pill-dot"></span>Live
-            </span>
-            {isAdmin && (
-              <span className="pill admin">
-                <span className="pill-dot"></span>Admin
-              </span>
-            )}
           </div>
         </nav>
 
@@ -1704,39 +1615,17 @@ export default function App() {
 
         <div className="main">
 
-          {/* ── STATS ── */}
-          <div className="stat-row">
-            <div className="stat-card total">
-              <div className="stat-icon total">
-                <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
-                  <rect x="1" y="1" width="6" height="6" rx="1.5" fill="var(--text-3)"/>
-                  <rect x="9" y="1" width="6" height="6" rx="1.5" fill="var(--text-3)"/>
-                  <rect x="1" y="9" width="6" height="6" rx="1.5" fill="var(--text-3)"/>
-                  <rect x="9" y="9" width="6" height="6" rx="1.5" fill="var(--text-3)"/>
-                </svg>
-              </div>
-              <span className="stat-num total">{total}</span>
-              <span className="stat-label">Total Codes</span>
+          {/* ── AVAILABILITY ── */}
+          <div className="hero">
+            <div className={`hero-num${avail === 0 ? " none" : ""}`}>
+              {total === 0 ? `No codes for ${monthLabel(nowMonth)}` : `${avail} of ${total} available`}
             </div>
-            <div className="stat-card avail">
-              <div className="stat-icon avail">
-                <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
-                  <circle cx="8" cy="8" r="6.5" stroke="var(--green-dark)" strokeWidth="1.5"/>
-                  <path d="M5 8.5L7 10.5L11 5.5" stroke="var(--green-dark)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
-              <span className="stat-num avail">{avail}</span>
-              <span className="stat-label">Available</span>
-            </div>
-            <div className="stat-card taken">
-              <div className="stat-icon taken">
-                <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
-                  <circle cx="8" cy="8" r="6.5" stroke="var(--red)" strokeWidth="1.5"/>
-                  <path d="M5.5 5.5L10.5 10.5M10.5 5.5L5.5 10.5" stroke="var(--red)" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-              </div>
-              <span className="stat-num taken">{taken}</span>
-              <span className="stat-label">Taken</span>
+            <div className={`hero-sub${total > 0 && expiry.urgent ? " urgent" : ""}`}>
+              {total === 0
+                ? (stagedDrops.length
+                    ? `${stagedDrops[0][1].length} ready for ${monthLabel(stagedDrops[0][0])}`
+                    : "Waiting for this month's codes")
+                : expiry.text}
             </div>
           </div>
 
@@ -1767,15 +1656,8 @@ export default function App() {
             )}
           </div>
 
-          {/* ── TABLE ── */}
+          {/* ── CODE LIST ── */}
           <div className="card">
-            <div className="t-head">
-              <span className="t-h">#</span>
-              <span className="t-h">Code</span>
-              <span className="t-h">Taken By</span>
-              <span className="t-h">Taken At</span>
-              <span className="t-h">Action</span>
-            </div>
             <div className="t-body">
               {loading && (
                 <div className="t-loading">
@@ -1795,22 +1677,17 @@ export default function App() {
                   {filtered.map((c, i) => (
                     <div key={c.id} className={`t-row ${c.status === STATUS.TAKEN ? "is-taken" : ""} ${c._opt ? "is-optimistic" : ""}`}
                       style={{ animationDelay: `${Math.min(i * 22, 220)}ms` }}>
-                      <span className="t-num">{i + 1}</span>
                       {/* Fix #11: Mask available codes, only reveal after Take flow */}
                       {c.status === STATUS.AVAILABLE && !isAdmin
-                        ? <span className="t-code-masked">
-                            {c.code.split("").map((ch, idx) =>
-                              idx < 2 || !/[A-Z0-9]/.test(ch) ? ch : "•"
-                            ).join("")}
-                          </span>
+                        ? <span className="t-code-masked">{maskCode(c.code)}</span>
                         : <span className="t-code">{c.code}</span>
                       }
-                      <span className="t-staff t-desktop-only">{c.takenBy || ""}</span>
-                      <span className="t-time t-desktop-only">{c.takenAt ? formatTime(c.takenAt) : ""}</span>
-                      <div className="t-mobile-info">
-                        <span className="t-staff">{c.takenBy || ""}</span>
-                        {c.takenAt && <span className="t-time">{formatTime(c.takenAt)}</span>}
-                      </div>
+                      {c.status === STATUS.TAKEN && (
+                        <div className="t-meta">
+                          <span className="t-staff">{c.takenBy || "-"}</span>
+                          {c.takenAt && <span className="t-time">{formatTime(c.takenAt)}</span>}
+                        </div>
+                      )}
                       <div className="t-act">
                         {c.status === STATUS.AVAILABLE
                           ? <button className="btn-take" onClick={() => setTakeModal({ id: c.id, code: c.code })}>Take</button>

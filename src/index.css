@@ -54,12 +54,13 @@ body {
   margin: 0;
 }
 
+/* Was a fixed 1126px column with side borders, from the Vite template. The app is
+   mobile-first now and centres its own content via `.page`, so this only needs to get
+   out of the way. The rest of this file stays: see the Decisions section of
+   .kiro/steering/sb-code-tracker.md. */
 #root {
-  width: 1126px;
-  max-width: 100%;
+  width: 100%;
   margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
   min-height: 100svh;
   display: flex;
   flex-direction: column;

@@ -17,10 +17,10 @@ verified against the actual code, not assumed.
 
 ### File layout
 
-Only 7 source files. `src/App.jsx` is a **single component, ~2160 lines**:
+Only 7 source files. `src/App.jsx` is a **single component, ~2140 lines**:
 
 - Lines 1 to 39: imports, Firebase init, constants (`MONTH_MS`, `ADMIN_PIN`, `STATUS`)
-- Lines 41 to 863: one ~820-line CSS template literal, injected via `<style>{styles}</style>`
+- Then one ~700-line CSS template literal, injected via `<style>{styles}</style>`
 - After the CSS: module-level helpers `toMs`, `formatTime`, `formatTimeShort`, `csvSafe`,
   the month-scoping block (`monthKeyOf`, `currentMonthKey`, `shiftMonthKey`, `monthLabel`,
   `monthLabelShort`, `partitionByMonth`, `groupByMonth`), and `log`
@@ -415,18 +415,49 @@ section banners are box-drawing characters.
 
 ## Decisions (don't "fix" these)
 
-**`src/index.css` is leftover Vite template CSS, and must not be deleted.** Most of it is dead
-(`h1`/`h2`/`code`/`p` rules, `#social`, and a dark-mode block shadowed by App's later
-`<style>`), **but `#root { width: 1126px; border-inline: 1px solid var(--border); }` actively
-shapes the layout.** Removing the file changes the UI. It also uses nested `@media` inside
-`:root`, which Vite 5 doesn't transpile, so pre-16.5 Safari ignores those rules.
+**`src/index.css` is leftover Vite template CSS.** Most of it is dead (`h1`/`h2`/`code`/`p`
+rules, `#social`, and a dark-mode block shadowed by App's later `<style>`). It used to also
+pin `#root` to a fixed 1126px column with side borders, which shaped the whole layout; the
+mobile-first redesign replaced that with `width: 100%` and `.page` now centres the content
+itself. What is left of `#root` is only the flex column and `min-height`.
+
+Two things in the file still matter. It uses nested `@media` inside `:root`, which Vite
+doesn't transpile, so pre-16.5 Safari ignores those rules. And `color-scheme: light dark`
+is still set, so in dark mode native controls render dark even though the app stays light
+(App's `:root` is injected later and wins on `--bg`).
 
 **No memoization, intentionally.** `merged`/`sorted`/`filtered`/`total`/`avail`/`taken`
 recompute every render. With one component and no memoized children, `useMemo` would
 prevent zero re-renders, only array work, which is microseconds at this scale.
 
-**The ~820-line CSS string stays in the JS bundle.** Moving it to a `.css` file would cut
+**The ~700-line CSS string stays in the JS bundle.** Moving it to a `.css` file would cut
 JS size and enable separate caching, but it's a restructure with no functional gain.
+
+## The staff-facing layout
+
+Rebuilt from a supplied design. Worth knowing before changing any of it:
+
+- **One centred column, max 560px, mobile-first.** There is no longer a desktop table and a
+  phone card view: it is the same card layout at every width, so there is only one thing to
+  keep working. The old `.t-head` grid, `.t-num`, `.t-desktop-only` and `.t-mobile-info` are
+  gone, along with the `!important` mobile overrides that used to fight the desktop grid.
+- **One availability figure, not three stat cards.** `.hero` states "N of M available" with
+  the expiry countdown under it. Staff asked one question here, so `taken` is no longer
+  computed. `monthExpiry()` produces the countdown and flags `urgent` at three days or less.
+- **Each code is a card.** `.card` is now a transparent wrapper that exists only so the
+  loading and empty states can occupy the same slot in the markup, which is why `.t-empty`
+  and `.t-loading` carry their own card styling.
+- **`maskCode()` shows a longer prefix than the original two characters,** capped at half
+  the string so a short sequential code is not effectively printed in full. Still cosmetic:
+  the real value is already on the device (known risk #2).
+- **New tokens:** `--track` for the segmented control and search field, `--green-strong` for
+  the hero figure (chosen to clear 3:1 at large sizes), `--orange-dark` for the urgent
+  expiry line. The primary action colour is blue, so `.btn-take` is blue rather than green.
+- **`/logo.png` is the full SingBuild lockup**, rendered height-driven with `width: auto`, so
+  it can be swapped for a different crop without touching the layout.
+
+The modals kept their existing styling. They share the same tokens so they still read as one
+app, but they were not part of the supplied design and have not been reworked.
 
 **No server-side scheduler, deliberately.** The monthly rollover is a client-side effect,
 not a Cloud Function or Vercel Cron. Adding one means `firebase-admin`, a service-account
