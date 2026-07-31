@@ -234,8 +234,11 @@ const styles = `
   .btn-mgr:active { transform: scale(0.985); }
 
   /* ─── CODE LIST ─── */
-  /* Each code is its own card. `.card` is kept as a transparent wrapper so the
-     loading and empty states can slot into the same place in the markup. */
+  /* Each code is its own card. The .card element is kept as a transparent wrapper
+     so the loading and empty states can slot into the same place in the markup.
+     NOTE: never use a backtick in this stylesheet, not even inside a comment. It
+     closes the surrounding JS template literal, which stays valid syntax, so both
+     eslint and the build pass and the app throws on load instead. */
   .card { background: none; border: none; box-shadow: none; }
   .t-body { display: flex; flex-direction: column; gap: 12px; }
   .t-body-inner {

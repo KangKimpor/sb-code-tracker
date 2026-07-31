@@ -277,6 +277,68 @@ Safe to commit: `firestore.rules`, `firebase.json`, `VITE_FIREBASE_*` config val
 
 ---
 
+## The CSS-in-JS landmine
+
+**A backtick anywhere in the `styles` template literal takes the whole app down, and
+nothing in the toolchain catches it.** This shipped once and produced a blank dark page in
+production.
+
+```js
+/* Each code is its own card. `.card` is kept as a wrapper */   // <- ends the literal
+```
+
+The backtick closes the template literal. What follows parses as a property access on the
+resulting string plus a tagged template call, which is **valid JavaScript**, so `eslint` is
+clean and `vite build` succeeds. It throws only when the module first runs:
+
+```
+Uncaught TypeError: "<the entire stylesheet>".card is not a function
+```
+
+Because it throws at module scope, `main.jsx` never renders, so `<style>{styles}</style>`
+never reaches the DOM either. The result is an unstyled empty `#root`: the browser paints
+its own dark canvas via `color-scheme: light dark` from `src/index.css`, which looks like a
+theming bug and sends you hunting in entirely the wrong place.
+
+The same applies to `${`, which would be read as an interpolation.
+
+Check before pushing any change to the stylesheet:
+
+```bash
+python3 - <<'EOF'
+src = open("src/App.jsx", encoding="utf-8").read()
+s = src.index("const styles = `") + 16
+body = src[s:src.index("\n`;\n", s)]
+bad = [l for l in body.split("\n") if "`" in l or "${" in l]
+print("BAD:", bad) if bad else print("stylesheet clean")
+EOF
+```
+
+### Verifying a UI change actually means running the bundle
+
+The gap that let this reach production: the redesign was checked by extracting the
+stylesheet with a regex and rendering it in a standalone HTML page. The CSS looked perfect,
+because a stray backtick is harmless inside a real `<style>` tag. Only the **JavaScript**
+was broken.
+
+`eslint` clean plus `npm run build` passing is not evidence the app runs. To actually prove
+it, inline the built bundle into a page and confirm React mounts:
+
+```bash
+npm run build
+# build an HTML file with the built .css in a <style> and the built .js in an
+# inline <script type="module">, then:
+agent-browser --session exec open "file:///.../dist/__exec.html"
+agent-browser --session exec eval "document.getElementById('root').children.length"   # must be > 0
+```
+
+Inline the script rather than linking it: `file://` blocks external module fetches, and an
+inline module reports real error messages instead of an opaque "Script error". Firestore is
+unreachable without `.env`, so the app renders its empty state, which is enough to prove the
+module executed and React mounted.
+
+---
+
 ## Browser gotchas
 
 ### `document.execCommand("copy")` returns `false`, it does not throw
