@@ -569,6 +569,35 @@ against a live database. Behaviour changes need the manual checks below.
    verify the `request.time` checks (gotcha #4).
 5. If Take fails: console shows `permission-denied` → restore the saved rules.
 
+### A merge does not guarantee a deployment
+
+Vercel usually deploys on push to `master`, but it has silently skipped a merge at least
+once: PR #21 merged as `e6b1bfc` and Vercel created **no deployment for it at all**, not a
+failed one. Production kept serving the previous commit's bundle, so the change simply
+appeared not to exist. The commit status stayed `pending` with zero statuses reported.
+
+So after merging, verify what is actually being served rather than trusting the merge:
+
+```bash
+JS=$(curl -sf https://sb-code-tracker.vercel.app/ | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -1)
+curl -sf "https://sb-code-tracker.vercel.app/$JS" | grep -c "some string only your change contains"
+```
+
+A string unique to the change is the reliable probe. **Bundle hashes are not**, because
+Vercel inlines the `VITE_*` values at build time, so a production bundle never matches a
+local build byte for byte.
+
+To see whether a deployment exists for a commit at all:
+
+```bash
+curl -sf "https://api.github.com/repos/KangKimpor/sb-code-tracker/deployments?per_page=5"
+```
+
+Look for an entry with `"environment": "Production"` whose `sha` is your merge commit. No
+entry means Vercel never picked the push up, which is a different problem from a failed
+build and is not fixable from the repo. Either press Redeploy in the Vercel dashboard or
+push another commit to `master` to trigger a fresh one.
+
 **Rules and app code that change together must be published together.** Vercel deploys on
 merge; rules do not. Any release that adds or renames a field on `codes` has a window
 between the two where writes fail with `permission-denied`, because the `hasOnly()`

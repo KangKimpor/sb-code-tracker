@@ -1,4 +1,4 @@
-// Version 1.1.0
+// Version 1.2.0
 import { useState, useEffect, useRef } from "react";
 import { Analytics } from "@vercel/analytics/react";
 import { initializeApp } from "firebase/app";
