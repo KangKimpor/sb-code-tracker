@@ -816,29 +816,35 @@ const styles = `
     padding: 6px 0 2px;
     animation: modalIn 0.26s var(--ease-spring);
   }
-  .reveal-icon { font-size: 40px; line-height: 1; margin-bottom: 12px; }
+  /* Only the reveal gets these. .modal is shared by every other modal in the app, so the
+     rounder corners and roomier padding are applied via a class added when revealing
+     rather than by changing the shared token. */
+  .reveal-modal { border-radius: 30px; padding: 30px 26px; }
+  .reveal-icon { font-size: 44px; line-height: 1; margin-bottom: 8px; }
   .reveal-label {
-    font-size: 12px; font-weight: 700; color: var(--text-4);
-    text-transform: uppercase; letter-spacing: 1.3px;
+    font-size: 13px; font-weight: 700; color: var(--text-4);
+    text-transform: uppercase; letter-spacing: 2px;
   }
   .reveal-code {
-    width: 100%; margin: 14px 0 16px;
+    width: 100%; margin: 16px 0 18px;
     background: var(--green); color: #fff;
-    border: none; border-radius: var(--r-xl);
-    padding: 24px 18px; text-align: center;
-    font-family: var(--font-mono); font-size: 30px; font-weight: 700;
-    letter-spacing: 1.5px; word-break: break-all;
-    box-shadow: 0 6px 20px rgba(52,199,89,0.32);
+    border: none; border-radius: 22px;
+    padding: 22px 18px; text-align: center;
+    font-family: var(--font-mono); font-size: 33px; font-weight: 700;
+    letter-spacing: 1px; word-break: break-all;
+    /* Soft drop shadow rather than the earlier glow, which read as a halo and made the
+       block look like it was floating off the card. */
+    box-shadow: 0 3px 10px rgba(52,199,89,0.24);
   }
-  .reveal-sub { font-size: 14px; color: var(--text-3); margin-bottom: 20px; }
+  .reveal-sub { font-size: 15px; color: var(--text-3); margin-bottom: 22px; }
   .reveal-sub strong { color: var(--text); font-weight: 700; }
 
   /* Chunkier than the modal buttons elsewhere: this is a one-handed tap on a phone,
      outdoors, and it is the last thing standing between the person and their ride. */
   .reveal-screen .m-actions { width: 100%; margin-top: 0; gap: 10px; }
   .reveal-btn {
-    flex: 1; border-radius: 14px; padding: 15px 12px;
-    font-size: 15px; font-weight: 700;
+    flex: 1; border-radius: 14px; padding: 16px 12px;
+    font-size: 15.5px; font-weight: 700;
   }
   .reveal-btn.btn-sec { background: var(--track); border-color: transparent; color: var(--text-2); }
   .reveal-btn.btn-sec:hover { background: var(--surface-3); color: var(--text); }
@@ -858,9 +864,10 @@ const styles = `
      A longer code still wraps via word-break, but this keeps the everyday 8 to 12
      character codes on one line. */
   @media (max-width: 420px) {
-    .reveal-icon { font-size: 36px; }
-    .reveal-code { font-size: 25px; padding: 21px 14px; letter-spacing: 1px; }
-    .reveal-btn { padding: 14px 10px; font-size: 14.5px; }
+    .reveal-modal { border-radius: 26px; padding: 26px 20px; }
+    .reveal-icon { font-size: 38px; }
+    .reveal-code { font-size: 27px; padding: 19px 14px; letter-spacing: 0.5px; }
+    .reveal-btn { padding: 15px 10px; font-size: 15px; }
   }
 
 `;
@@ -2106,7 +2113,7 @@ export default function App() {
       {/* ── TAKE MODAL ── */}
       {(takeModal || revealedCode) && (
         <div className="overlay" onClick={() => { setTakeModal(null); setStaffName(""); setRevealedCode(null); setTakeError(""); setCopied(false); }}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+          <div className={`modal${revealedCode ? " reveal-modal" : ""}`} onClick={e => e.stopPropagation()}>
             {revealedCode ? (
               /* Reveal screen, shown after successful Take (Fix #11) */
               <div className="reveal-screen">
