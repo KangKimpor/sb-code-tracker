@@ -20,7 +20,8 @@ verified against the actual code, not assumed.
 Only 7 source files. `src/App.jsx` is a **single component, ~2390 lines**:
 
 - Top of file: imports, Firebase init, collection refs, constants (`MONTH_MS`,
-  `REQUEST_COOLDOWN_MS`, `LS_DEVICE`, `LS_REQUEST`, `ADMIN_PIN`, `STATUS`)
+  `REQUEST_COOLDOWN_MS`, `LS_DEVICE`, `LS_REQUEST`, `LOW_STOCK_THRESHOLD`,
+  `STAGE_REMINDER_DAYS`, `ADMIN_PIN`, `STATUS`)
 - Then one ~730-line CSS template literal, injected via `<style>{styles}</style>`
 - After the CSS: module-level helpers `toMs`, `formatTime`, `formatTimeShort`, `csvSafe`,
   the month-scoping block (`monthKeyOf`, `currentMonthKey`, `shiftMonthKey`, `monthLabel`,
@@ -199,6 +200,71 @@ exact thing the feature exists to show.
 
 Requests are scoped to `nowMonth` on the render path, like codes. An unanswered request
 from last month is history, not a queue, and the codes it asked for no longer work.
+
+---
+
+## Admin alerts
+
+Two advisory banners above the hero, admin only, built into an `adminAlerts` array in the
+derived section. Both describe the same eventual failure, staff arriving to an empty
+tracker, at two different distances out.
+
+| Alert | Condition | Level |
+|---|---|---|
+| `low` | `total > 0 && avail <= LOW_STOCK_THRESHOLD` (3) | warn |
+| `out` | `total > 0 && avail === 0` | urgent |
+| `unstaged` | `expiry.days <= STAGE_REMINDER_DAYS` (7) and next month has zero staged codes | warn |
+
+`low` and `out` are mutually exclusive (`else if`), so at most two banners show at once.
+
+**The `unstaged` one is the important one.** Running dry mid-month is visible to everybody
+the moment it happens, and staff now have the top-up button for it. Next month never being
+staged is worse precisely because it is *invisible*: the tracker empties itself at midnight
+on the 1st, with nobody watching, and the first sign is 30 people who cannot book a ride.
+
+### Why these specific gates
+
+**`total > 0` on the stock alerts.** With nothing on file at all the hero already says "No
+codes for <Month>" and the empty state says what to do, so a third message adds noise. More
+importantly "you have run out" is the wrong description of a month that was never filled.
+
+**Next month specifically, not "anything staged".** Staging September while August is live
+does not help if nothing is staged for August. `stagedCodes` covers every future month, so
+the check has to be `c.monthKey === shiftMonthKey(nowMonth, 1)`.
+
+**`expiry.days !== null` is a real guard, not defensive noise.** `monthExpiry` returns
+`days: null` for any month that is not the current one, and for a malformed key. Without the
+null check, `null <= 7` is `true` in JavaScript, so the nudge would fire on a stale or
+garbage month key.
+
+**Seven days, not the whole month.** A banner that sits there all month is one people learn
+to scroll past, and the nudge is only actionable near the end anyway. Note the window opens
+on a *date* that shifts with month length: 7 days out is the 24th in a 31-day month and the
+21st in February.
+
+**No dismiss button, deliberately.** Each alert clears itself when the thing it asks for is
+done, which is a stronger guarantee than a dismissal that hides a problem nobody fixed.
+Adding dismissal would also need persistence to survive a reload, and a dismissed
+"nothing staged for next month" is exactly the outage this exists to prevent.
+
+### The action button sets Drop Month
+
+Each alert's button opens Code Manager **and sets `dropMonth` to the month that alert is
+about**: the current month for a top-up, next month for staging.
+
+This is error prevention, not a shortcut. Drop Month is the one field in the manager that
+silently decides whether codes go live immediately or in a month, and it persists across
+manager opens. Without the pre-set, the two realistic mistakes are pasting a top-up into
+next month's staged drop (the live pool stays empty and nobody notices) and pasting next
+month's batch into the live pool (40 codes go out weeks early). Both are consistent with
+the alert the admin just tapped, which is what makes them easy to make.
+
+### `monthExpiry` returns `days` and `label` as well as copy
+
+The staging nudge needs the raw day count, and re-deriving "how much of the month is left"
+somewhere else is how two copies of that logic drift apart. `days` is `null` whenever it
+would be meaningless rather than `0`, which forces callers to null-check instead of quietly
+treating "not this month" as "expires today".
 
 ### Duplicate detection is per month
 
@@ -790,6 +856,30 @@ The behaviour is time-dependent, so the only honest test is to move the clock. C
 - "Assign to <month>" on the No Drop Month notice → the codes stay live, and are then
   removed automatically at the next month boundary. This exercises the LABEL rule; a
   `permission-denied` here means the deployed rules predate it.
+
+### Testing the admin alerts
+
+Also clock-dependent, so also an OS date change. Log in as admin first, the banners never
+render for staff.
+
+- **Low stock:** claim codes until 3 remain → an orange "Only 3 codes left" banner appears.
+  Claim the rest → it is replaced by a red "All N codes claimed". Add a code → both clear.
+- **Unstaged nudge:** set the OS date to the 24th of a 31-day month with nothing staged for
+  next month → "Nothing staged for <next>" appears. Set it to the 23rd → it is gone. In a
+  28-day February the window opens on the 21st, not the 24th, because it counts days
+  remaining rather than a fixed date.
+- **The nudge clears on staging, not on adding:** with the nudge showing, add codes to the
+  *current* month → the nudge must remain. Stage one code for next month → it clears. This
+  is the assertion that catches a check against `stagedCodes` as a whole instead of next
+  month specifically.
+- **Drop Month pre-set:** with Drop Month left on a future month, tap the low-stock banner's
+  "Add codes" → the manager must open with Drop Month back on the current month. Tap the
+  staging banner's "Stage <next>" → it must open on next month. Getting this backwards is
+  how a top-up silently lands in a staged drop.
+- The date arithmetic behind the nudge (month lengths, leap years, year rollover, the
+  boundary day, and the `days === null` guard) is covered by extracting `monthExpiry` from
+  source and freezing the clock, which is cheaper than an OS date change for the edge cases.
+  Worth redoing if `monthExpiry` is ever touched.
 
 Reset the clock afterwards. Anything written while the clock was wrong keeps that
 `monthKey`, so clean up test codes before switching back.
