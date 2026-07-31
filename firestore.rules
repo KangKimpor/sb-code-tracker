@@ -133,6 +133,30 @@ service cloud.firestore {
       allow delete: if true;   // required by clearOldLogs
     }
 
+    // Written by requestTopup when a staff member reports the pool is empty. One doc
+    // per tap. Read by the admin listener, which is subscribed whenever isAdmin is on.
+    //
+    // `deviceId` is a random value from the claiming browser's localStorage, used only
+    // to count distinct people rather than distinct taps. It identifies a browser, not
+    // a person, so it is size-capped and otherwise unconstrained.
+    //
+    // NOT rate-limited, and cannot be: there is no auth, so rules cannot tell one
+    // device from another, and the six-hour cooldown is enforced on the client only.
+    // Anyone can therefore write as many requests as they like. The blast radius is a
+    // wrong number on an admin screen and some junk docs that Clear Old Logs removes,
+    // which is why this is acceptable here and would not be for anything else.
+    match /topupRequests/{requestId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['monthKey', 'ts', 'deviceId'])
+                    && request.resource.data.monthKey is string
+                    && request.resource.data.monthKey.matches('^[0-9]{4}-(0[1-9]|1[0-2])$')
+                    && request.resource.data.ts is int
+                    && request.resource.data.deviceId is string
+                    && request.resource.data.deviceId.size() <= 64;
+      allow update: if false;
+      allow delete: if true;   // required by clearTopupRequests and clearOldLogs
+    }
+
     // Deny everything else by default.
     match /{document=**} {
       allow read, write: if false;
