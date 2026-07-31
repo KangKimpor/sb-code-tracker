@@ -3,7 +3,7 @@ rules_version = '2';
 // Security rules for sb-code-tracker.
 //
 // IMPORTANT CONTEXT: this app uses NO Firebase Authentication. Every read and
-// write is anonymous, so these rules cannot identify *who* is acting — they can
+// write is anonymous, so these rules cannot identify *who* is acting. They can
 // only constrain *what* may be written. The admin PIN in App.jsx is a client-side
 // convenience, not a security boundary (see the comment above ADMIN_PIN).
 //
@@ -27,17 +27,16 @@ service cloud.firestore {
       // Created by addCode (single) and addBulk (batch.set). Both write exactly
       // these six fields, always starting in the "available" state.
       //
-      // `monthKey` ("YYYY-MM") is the drop a code belongs to — the month it works in.
+      // `monthKey` ("YYYY-MM") is the drop a code belongs to: the month it works in.
       // The app hides codes outside the current month, and deletes everything older
       // once a new drop goes live. The format is validated because the whole scheme
       // relies on the keys being zero-padded and therefore string-sortable: an
       // unpadded "2026-9" would sort *before* "2026-10", and the code would be
       // treated as old and deleted two months early.
       //
-      // Codes written before this field existed simply have no monthKey. They are
-      // never relabelled — the app treats them as the live set until a real drop
-      // replaces them, then deletes them. That's why there is no "set monthKey"
-      // transition in the update rule below.
+      // Codes written before this field existed simply have no monthKey. The app
+      // treats them as live and never dates them on its own; an admin assigns a
+      // month explicitly, which is the LABEL transition in the update rule below.
       //
       // Deliberately NOT validated against the current month. request.time is UTC,
       // and staff are in UTC+7, so requiring monthKey == the server's month would
@@ -54,11 +53,9 @@ service cloud.firestore {
                     && request.resource.data.monthKey is string
                     && request.resource.data.monthKey.matches('^[0-9]{4}-(0[1-9]|1[0-2])$');
 
-      // Only the two transitions the app performs are permitted, and `code`,
-      // `createdAt` and `monthKey` are all immutable. This is what stops a client
-      // from writing status directly and bypassing the runTransaction claim check
-      // — and, with monthKey frozen, from moving a code into a different drop to
-      // dodge the cleanup or unhide a staged one.
+      // Only the three transitions the app performs are permitted, and `code` and
+      // `createdAt` are immutable. This is what stops a client from writing status
+      // directly and bypassing the runTransaction claim check.
       allow update: if request.resource.data.keys().hasOnly(
                          ['code', 'status', 'takenBy', 'takenAt', 'createdAt', 'monthKey'])
                     && request.resource.data.code == resource.data.code
@@ -72,7 +69,7 @@ service cloud.firestore {
                       // directly: reading a field that doesn't exist is an error in
                       // rules, which denies the write. Codes created before drop
                       // scheduling existed have no monthKey, and they are the live
-                      // set until a new drop replaces them — so a direct comparison
+                      // set until a new drop replaces them, so a direct comparison
                       // would leave nobody able to take a code at all.
                       (resource.data.status == 'available'
                         && request.resource.data.status == 'taken'
@@ -88,10 +85,25 @@ service cloud.firestore {
                         && request.resource.data.takenBy == null
                         && request.resource.data.takenAt == null
                         && request.resource.data.get('monthKey', '') == resource.data.get('monthKey', ''))
+                      ||
+                      // LABEL: set the month on a code that has none, without touching
+                      // the claim state. Used by the admin action that adopts codes
+                      // created before drop scheduling existed, so they expire on their
+                      // own from then on.
+                      //
+                      // Restricted to codes with no monthKey yet, so a code can never be
+                      // moved between drops: that would allow dodging cleanup, or
+                      // unhiding a staged drop before its month starts.
+                      (!('monthKey' in resource.data)
+                        && request.resource.data.status == resource.data.status
+                        && request.resource.data.get('takenBy', null) == resource.data.get('takenBy', null)
+                        && request.resource.data.get('takenAt', null) == resource.data.get('takenAt', null)
+                        && request.resource.data.monthKey is string
+                        && request.resource.data.monthKey.matches('^[0-9]{4}-(0[1-9]|1[0-2])$'))
                     );
 
       // Required by deleteCode and bulkDelete. Admin-only in the UI, but NOT
-      // enforceable without real authentication — this is a known open risk.
+      // enforceable without real authentication. This is a known open risk.
       allow delete: if true;
     }
 
