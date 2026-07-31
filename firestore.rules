@@ -25,40 +25,69 @@ service cloud.firestore {
       allow read: if true;
 
       // Created by addCode (single) and addBulk (batch.set). Both write exactly
-      // these five fields, always starting in the "available" state.
+      // these six fields, always starting in the "available" state.
+      //
+      // `monthKey` ("YYYY-MM") is the drop a code belongs to — the month it works in.
+      // The app hides codes outside the current month, and deletes everything older
+      // once a new drop goes live. The format is validated because the whole scheme
+      // relies on the keys being zero-padded and therefore string-sortable: an
+      // unpadded "2026-9" would sort *before* "2026-10", and the code would be
+      // treated as old and deleted two months early.
+      //
+      // Codes written before this field existed simply have no monthKey. They are
+      // never relabelled — the app treats them as the live set until a real drop
+      // replaces them, then deletes them. That's why there is no "set monthKey"
+      // transition in the update rule below.
+      //
+      // Deliberately NOT validated against the current month. request.time is UTC,
+      // and staff are in UTC+7, so requiring monthKey == the server's month would
+      // reject legitimate writes for the first 7 hours of every month.
       allow create: if request.resource.data.keys().hasOnly(
-                         ['code', 'status', 'takenBy', 'takenAt', 'createdAt'])
+                         ['code', 'status', 'takenBy', 'takenAt', 'createdAt', 'monthKey'])
                     && request.resource.data.code is string
                     && request.resource.data.code.size() > 0
                     && request.resource.data.code.size() <= 64
                     && request.resource.data.status == 'available'
                     && request.resource.data.takenBy == null
                     && request.resource.data.takenAt == null
-                    && request.resource.data.createdAt is int;
+                    && request.resource.data.createdAt is int
+                    && request.resource.data.monthKey is string
+                    && request.resource.data.monthKey.matches('^[0-9]{4}-(0[1-9]|1[0-2])$');
 
-      // Only the two transitions the app performs are permitted, and `code` /
-      // `createdAt` are immutable. This is what stops a client from writing
-      // status directly and bypassing the runTransaction claim check.
+      // Only the two transitions the app performs are permitted, and `code`,
+      // `createdAt` and `monthKey` are all immutable. This is what stops a client
+      // from writing status directly and bypassing the runTransaction claim check
+      // — and, with monthKey frozen, from moving a code into a different drop to
+      // dodge the cleanup or unhide a staged one.
       allow update: if request.resource.data.keys().hasOnly(
-                         ['code', 'status', 'takenBy', 'takenAt', 'createdAt'])
+                         ['code', 'status', 'takenBy', 'takenAt', 'createdAt', 'monthKey'])
                     && request.resource.data.code == resource.data.code
                     && request.resource.data.createdAt == resource.data.createdAt
                     && (
                       // CLAIM: available -> taken (takeCode / runTransaction).
                       // serverTimestamp() resolves to request.time, so requiring
                       // equality here forces an authoritative server clock.
+                      //
+                      // monthKey is compared with .get(key, default) rather than
+                      // directly: reading a field that doesn't exist is an error in
+                      // rules, which denies the write. Codes created before drop
+                      // scheduling existed have no monthKey, and they are the live
+                      // set until a new drop replaces them — so a direct comparison
+                      // would leave nobody able to take a code at all.
                       (resource.data.status == 'available'
                         && request.resource.data.status == 'taken'
                         && request.resource.data.takenBy is string
                         && request.resource.data.takenBy.size() > 0
                         && request.resource.data.takenBy.size() <= 60
-                        && request.resource.data.takenAt == request.time)
+                        && request.resource.data.takenAt == request.time
+                        && request.resource.data.get('monthKey', '') == resource.data.get('monthKey', ''))
                       ||
                       // RELEASE: taken -> available (releaseCode / updateDoc)
                       (resource.data.status == 'taken'
                         && request.resource.data.status == 'available'
                         && request.resource.data.takenBy == null
-                        && request.resource.data.takenAt == null)
+                        && request.resource.data.takenAt == null
+                        && request.resource.data.get('monthKey', '') == resource.data.get('monthKey', ''))
                     );
 
       // Required by deleteCode and bulkDelete. Admin-only in the UI, but NOT
