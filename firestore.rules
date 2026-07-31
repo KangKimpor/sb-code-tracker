@@ -27,11 +27,17 @@ service cloud.firestore {
       // Created by addCode (single) and addBulk (batch.set). Both write exactly
       // these six fields, always starting in the "available" state.
       //
-      // `monthKey` ("YYYY-MM") is the month the code is valid for — the app hides
-      // codes outside the current month and deletes them once it has passed. The
-      // format is validated because the whole scheme relies on the keys being
-      // zero-padded and therefore string-sortable: an unpadded "2026-9" would sort
-      // *before* "2026-10" and the code would expire two months early.
+      // `monthKey` ("YYYY-MM") is the drop a code belongs to — the month it works in.
+      // The app hides codes outside the current month, and deletes everything older
+      // once a new drop goes live. The format is validated because the whole scheme
+      // relies on the keys being zero-padded and therefore string-sortable: an
+      // unpadded "2026-9" would sort *before* "2026-10", and the code would be
+      // treated as old and deleted two months early.
+      //
+      // Codes written before this field existed simply have no monthKey. They are
+      // never relabelled — the app treats them as the live set until a real drop
+      // replaces them, then deletes them. That's why there is no "set monthKey"
+      // transition in the update rule below.
       //
       // Deliberately NOT validated against the current month. request.time is UTC,
       // and staff are in UTC+7, so requiring monthKey == the server's month would
@@ -48,9 +54,11 @@ service cloud.firestore {
                     && request.resource.data.monthKey is string
                     && request.resource.data.monthKey.matches('^[0-9]{4}-(0[1-9]|1[0-2])$');
 
-      // Only the three transitions the app performs are permitted, and `code` /
-      // `createdAt` are immutable. This is what stops a client from writing
-      // status directly and bypassing the runTransaction claim check.
+      // Only the two transitions the app performs are permitted, and `code`,
+      // `createdAt` and `monthKey` are all immutable. This is what stops a client
+      // from writing status directly and bypassing the runTransaction claim check
+      // — and, with monthKey frozen, from moving a code into a different drop to
+      // dodge the cleanup or unhide a staged one.
       allow update: if request.resource.data.keys().hasOnly(
                          ['code', 'status', 'takenBy', 'takenAt', 'createdAt', 'monthKey'])
                     && request.resource.data.code == resource.data.code
@@ -63,9 +71,9 @@ service cloud.firestore {
                       // monthKey is compared with .get(key, default) rather than
                       // directly: reading a field that doesn't exist is an error in
                       // rules, which denies the write. Codes created before drop
-                      // scheduling existed have no monthKey, so a direct comparison
-                      // would make every one of them permanently unclaimable — a
-                      // total outage until the backfill happened to run.
+                      // scheduling existed have no monthKey, and they are the live
+                      // set until a new drop replaces them — so a direct comparison
+                      // would leave nobody able to take a code at all.
                       (resource.data.status == 'available'
                         && request.resource.data.status == 'taken'
                         && request.resource.data.takenBy is string
@@ -80,15 +88,6 @@ service cloud.firestore {
                         && request.resource.data.takenBy == null
                         && request.resource.data.takenAt == null
                         && request.resource.data.get('monthKey', '') == resource.data.get('monthKey', ''))
-                      ||
-                      // LABEL: set monthKey without touching the claim state. Used by
-                      // the one-time backfill that labels codes created before drop
-                      // scheduling existed, so they can expire like everything else.
-                      (request.resource.data.status == resource.data.status
-                        && request.resource.data.get('takenBy', null) == resource.data.get('takenBy', null)
-                        && request.resource.data.get('takenAt', null) == resource.data.get('takenAt', null)
-                        && request.resource.data.monthKey is string
-                        && request.resource.data.monthKey.matches('^[0-9]{4}-(0[1-9]|1[0-2])$'))
                     );
 
       // Required by deleteCode and bulkDelete. Admin-only in the UI, but NOT

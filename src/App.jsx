@@ -934,23 +934,43 @@ function monthLabelShort(key) {
   return new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "short", year: "numeric" });
 }
 
-// Splits codes into this month's live set, future drops, and dead codes from past
-// months. Codes created before drop scheduling existed have no `monthKey`; they are
-// treated as belonging to the current month so that nothing disappears from the table
-// before the one-time backfill labels them — and, more importantly, so the rollover
-// sweep can never delete a code it wasn't able to classify.
+// Splits codes into what staff should see now, what's staged for later, and what has
+// been superseded.
+//
+//   live   — this month's drop: the codes staff can claim
+//   staged — labelled for a later month; hidden until that month begins
+//   stale  — everything else: last month's codes, and codes carrying no monthKey at
+//            all (created before drop scheduling existed, or added from the console)
+//
+// A code's month can't be read off the code itself, so `monthKey` is the only record of
+// which drop it belongs to — and codes that predate the field have no record at all.
+// Rather than guess a month for them, they are classified by *position*: unlabelled
+// codes are the live set right up until a labelled drop for the current month exists,
+// at which point they are superseded and become stale. That ordering is what makes the
+// feature safe to deploy mid-month — the codes staff are using stay visible until their
+// replacement is actually in.
 //
 // Module-level and pure so both the rollover effect and the render path can use it
 // without turning it into an effect dependency.
-function partitionByMonth(list, month) {
-  const active = [], scheduled = [], expired = [];
+function partitionCodes(list, month) {
+  const hasCurrentDrop = list.some(c => c.monthKey === month);
+  const live = [], staged = [], stale = [];
   list.forEach(c => {
-    const key = c.monthKey || month;
-    if (key === month) active.push(c);
-    else if (key > month) scheduled.push(c);
-    else expired.push(c);
+    if (!c.monthKey) (hasCurrentDrop ? stale : live).push(c);
+    else if (c.monthKey === month) live.push(c);
+    else if (c.monthKey > month) staged.push(c);
+    else stale.push(c);
   });
-  return { active, scheduled, expired };
+  return { live, staged, stale };
+}
+
+// Human-readable list of the drops a set of codes came from, for log lines and the
+// "old codes" notice. Unlabelled codes have no month to name, so they're called out
+// as such rather than being silently attributed to one.
+function describeDrops(list) {
+  return [...new Set(list.map(c => c.monthKey || "~"))].sort()
+    .map(key => (key === "~" ? "unlabelled" : monthLabelShort(key)))
+    .join(", ");
 }
 
 // [[monthKey, codes], ...] in chronological order. Used by the Scheduled Drops list
@@ -967,7 +987,7 @@ function groupByMonth(list, fallback) {
 
 // Write a log entry to Firestore only — onSnapshot keeps local state in sync (Fix #3).
 // Module-level because it closes over nothing but `logsRef`: that keeps it out of the
-// dependency arrays of the rollover/backfill effects, which would otherwise re-run on
+// dependency array of the cleanup effect, which would otherwise re-run on
 // every render (it would be a new function identity each time).
 // Intentionally swallows errors: audit logging must never block a staff member.
 function log(type, text) {
@@ -1014,11 +1034,13 @@ export default function App() {
   // Pending "delete this whole scheduled drop" confirmation — { monthKey, ids }
   const [dropDelConfirm, setDropDelConfirm] = useState(null);
 
-  // Guards for the two automatic background writes. Refs, not state: they must not
-  // trigger a re-render, and they need to be readable synchronously so a second
-  // snapshot arriving mid-flight can't start the same batch twice.
-  const backfilled = useRef(false);
-  const sweptMonth = useRef(null);
+  // Guard for the automatic cleanup below. A ref, not state: it must not trigger a
+  // re-render, and it has to be readable synchronously so a snapshot arriving mid-flight
+  // can't kick off the same batch of deletes twice.
+  //   busy        — a sweep is in flight
+  //   failedMonth — the sweep errored this month; don't retry on every snapshot. Cleared
+  //                 by a reload, or when the month changes.
+  const sweep = useRef({ busy: false, failedMonth: null });
 
   // Release history — synced from Firebase (lazy: only when Code Manager is open)
   const [releaseHistory, setReleaseHistory] = useState([]);
@@ -1155,78 +1177,55 @@ export default function App() {
     setDropMonth(prev => (prev < nowMonth ? nowMonth : prev));
   }, [nowMonth]);
 
-  // One-time backfill: label codes that predate drop scheduling with the current month.
-  // Without this they would have no monthKey forever, so the rollover sweep would never
-  // clear them (it deliberately ignores unclassified codes) and they'd linger as live
-  // codes into every following month.
+  // ── Automatic cleanup when a new drop goes live ──
+  // The rule this implements: once a new set of codes is in and usable by staff, every
+  // code that isn't part of it is deleted. Old codes stop working at the source, so
+  // leaving them in the tracker only invites someone to claim a code that won't redeem.
   //
-  // Runs on whichever client loads first; it is idempotent, so two clients racing just
-  // means the same value is written twice.
-  useEffect(() => {
-    if (loading || connError || backfilled.current) return;
-    const unlabelled = codes.filter(c => !c.monthKey);
-    if (!unlabelled.length) return;
-    backfilled.current = true;
-    const month = nowMonth;
-    (async () => {
-      try {
-        for (let i = 0; i < unlabelled.length; i += 400) {
-          const batch = writeBatch(db);
-          unlabelled.slice(i, i + 400).forEach(c => batch.update(doc(db, "codes", c.id), { monthKey: month }));
-          await batch.commit();
-        }
-        log("schedule", `Labelled ${unlabelled.length} existing code(s) as ${monthLabelShort(month)}`);
-      } catch (err) {
-        // No alert(): this is background maintenance nobody asked for, and the app is
-        // fully usable without it (unlabelled codes are treated as current-month).
-        // Most likely cause is firestore.rules not yet allowing the monthKey field.
-        console.error("monthKey backfill failed:", err);
-        backfilled.current = false;   // retry on a later snapshot
-      }
-    })();
-  }, [codes, loading, connError, nowMonth]);
-
-  // ── Automatic month rollover ──
-  // Once the calendar flips, last month's codes are dead — they stop working at the
-  // source, so keeping them in the tracker only invites staff to claim a code that
-  // won't redeem. Hiding them is handled by the `active` partition on the render path
-  // (presentational, no writes, instant). This effect does the actual deletion.
+  // "Goes live" is the trigger, not "was added" — a drop staged for next month can't
+  // replace anything yet, because staff still need this month's codes until the 1st.
+  // Adding codes for the *current* month therefore cleans up immediately, while a staged
+  // drop cleans up the moment its month starts.
   //
-  // Gated on this month's drop already existing, which is the invariant that makes an
-  // unattended delete safe:
-  //   1. The sweep can only ever trim the tracker down to the new month's codes — it
-  //      can never empty it. If the new drop hasn't been added yet, last month's codes
-  //      stay in Firestore (still hidden) until it is, or until an admin clears them.
+  // Staged drops for *later* months are never touched: they're queued work, not leftovers.
+  //
+  // Hiding is separate from deleting. Stale codes disappear from the table through the
+  // `partitionCodes` filter on the render path — no writes, instant, and it still holds
+  // if this delete never runs. That's what makes an unattended delete safe here:
+  //   1. It's gated on the live set being non-empty, so it can only ever trim the
+  //      tracker down to the new drop — it can never empty it.
   //   2. There is no server-side scheduler in this project, so this runs on whatever
   //      client happens to be open, trusting that device's clock. A device with a clock
-  //      set a month ahead would see live codes as expired — but it would also have to
-  //      be holding codes for its own wrong month, which it isn't, so it skips.
+  //      set a month ahead sees the live drop as stale — but it would also need codes
+  //      for its own wrong month to pass the gate, and it has none, so it skips.
   //
-  // Skipped while offline, and attempted at most once per month per session so a
-  // permission error can't turn into a write loop.
+  // Skipped while offline. A failure stops further attempts for the rest of the month so
+  // a permission error can't turn every snapshot into another round of failing batches.
   useEffect(() => {
     if (loading || connError) return;
-    if (sweptMonth.current === nowMonth) return;
-    const { active, expired } = partitionByMonth(codes, nowMonth);
-    if (!expired.length) return;
-    if (!active.length) return;   // this month's drop isn't in yet — wait for it
-    sweptMonth.current = nowMonth;
-    const months = [...new Set(expired.map(c => c.monthKey))].sort().map(monthLabelShort).join(", ");
-    const held = expired.filter(c => c.status === STATUS.TAKEN).length;
+    if (sweep.current.busy || sweep.current.failedMonth === nowMonth) return;
+    const { live, stale } = partitionCodes(codes, nowMonth);
+    if (!stale.length) return;
+    if (!live.length) return;   // nothing has replaced them yet — leave them alone
+    sweep.current.busy = true;
+    const from = describeDrops(stale);
+    const held = stale.filter(c => c.status === STATUS.TAKEN).length;
     (async () => {
       try {
-        for (let i = 0; i < expired.length; i += 400) {
+        for (let i = 0; i < stale.length; i += 400) {
           const batch = writeBatch(db);
-          expired.slice(i, i + 400).forEach(c => batch.delete(doc(db, "codes", c.id)));
+          stale.slice(i, i + 400).forEach(c => batch.delete(doc(db, "codes", c.id)));
           await batch.commit();
         }
-        log("expire", `Month rollover — removed ${expired.length} expired code(s) from ${months}${held ? ` (${held} had been taken)` : ""}`);
+        log("expire", `${monthLabelShort(nowMonth)} drop live — removed ${stale.length} old code(s) from ${from}${held ? ` (${held} had been taken)` : ""}`);
       } catch (err) {
         // Deliberately no alert(): this fires on load, unprompted, and an error popup
         // for a background chore would just block a staff member trying to grab a code.
-        // The expired codes remain hidden either way, so the failure is not user-facing.
-        console.error("month rollover failed:", err);
-        sweptMonth.current = null;   // allow a retry on the next snapshot
+        // The old codes remain hidden either way, so the failure is not user-facing.
+        console.error("stale code cleanup failed:", err);
+        sweep.current.failedMonth = nowMonth;
+      } finally {
+        sweep.current.busy = false;
       }
     })();
   }, [codes, loading, connError, nowMonth]);
@@ -1406,21 +1405,21 @@ export default function App() {
     }
   };
 
-  // Manual escape hatch for the rollover: clears expired codes even when this month's
-  // drop hasn't been added yet, which is the one case the automatic sweep refuses to
+  // Manual escape hatch for the automatic cleanup: removes old codes even when no new
+  // drop has replaced them yet, which is the one case the sweep deliberately refuses to
   // touch. Also what an admin reaches for if the sweep failed on a permission error.
-  const clearExpired = async () => {
-    const ids = expiredCodes.map(c => c.id);
+  const clearStale = async () => {
+    const ids = staleCodes.map(c => c.id);
     if (!ids.length) return;
-    const months = groupByMonth(expiredCodes, nowMonth).map(([k]) => monthLabelShort(k)).join(", ");
-    if (!confirm(`Remove ${ids.length} expired code(s) from ${months}? They no longer work. This cannot be undone.`)) return;
+    const from = describeDrops(staleCodes);
+    if (!confirm(`Remove ${ids.length} old code(s) from ${from}? They no longer work. This cannot be undone.`)) return;
     try {
       await deleteCodeIds(ids);
-      log("expire", `Cleared ${ids.length} expired code(s) from ${months}`);
-      alert(`✓ Removed ${ids.length} expired code(s).`);
+      log("expire", `Cleared ${ids.length} old code(s) from ${from}`);
+      alert(`✓ Removed ${ids.length} old code(s).`);
     } catch (err) {
-      console.error("clearExpired failed:", err);
-      alert("Failed to remove expired codes. Please try again.");
+      console.error("clearStale failed:", err);
+      alert("Failed to remove old codes. Please try again.");
     }
   };
 
@@ -1485,16 +1484,16 @@ export default function App() {
   };
 
   const exportCSV = () => {
-    // Exports every month on file, not just the live one — including staged drops, so
-    // the sheet doubles as a record of what's queued. `Drop` says which month a code is
-    // valid for; `Month Status` says whether that month is live, still to come, or done.
-    const rows = [["Code", "Drop", "Month Status", "Status", "Taken By", "Taken At", "Released At"]];
+    // Exports every code on file, not just the live drop — including staged ones, so the
+    // sheet doubles as a record of what's queued. `Drop` is the month the code belongs to
+    // (blank for codes added before drop scheduling); `Drop Status` is which bucket it's
+    // in right now, taken straight from the same partition the UI uses.
+    const rows = [["Code", "Drop", "Drop Status", "Status", "Taken By", "Taken At", "Released At"]];
     codes.forEach(c => {
-      const key = c.monthKey || nowMonth;
       rows.push([
         csvSafe(c.code),
-        key,
-        key === nowMonth ? "current" : key > nowMonth ? "scheduled" : "expired",
+        c.monthKey || "",
+        liveIds.has(c.id) ? "live" : stagedIds.has(c.id) ? "scheduled" : "old",
         c.status,
         csvSafe(c.takenBy || ""),
         toMs(c.takenAt) ? new Date(toMs(c.takenAt)).toISOString() : "",
@@ -1536,33 +1535,39 @@ export default function App() {
     }
   };
 
-  // ── Month partitions ──
-  // Only the live month reaches the table and the stat cards. Scheduled and expired
-  // codes are filtered out here rather than in the Firestore query: the listener
-  // deliberately stays a single unfiltered subscription (see the listener comment), and
-  // this is the same trade-off the code masking already makes — a staged drop is hidden
-  // from the UI, not from the network. Anyone who opens DevTools can read next month's
-  // codes early, exactly as they can read an unclaimed code today (known risk #2).
-  const { active: activeCodes, scheduled: scheduledCodes, expired: expiredCodes } =
-    partitionByMonth(codes, nowMonth);
+  // ── Drop partitions ──
+  // Only the live drop reaches the table and the stat cards. Staged and stale codes are
+  // filtered out here rather than in the Firestore query: the listener deliberately stays
+  // a single unfiltered subscription (see the listener comment), and this is the same
+  // trade-off the code masking already makes — a staged drop is hidden from the UI, not
+  // from the network. Anyone who opens DevTools can read next month's codes early, exactly
+  // as they can read an unclaimed code today (known risk #2).
+  const { live: liveCodes, staged: stagedCodes, stale: staleCodes } =
+    partitionCodes(codes, nowMonth);
 
-  const scheduledDrops = groupByMonth(scheduledCodes, nowMonth);
-  const expiredDrops = groupByMonth(expiredCodes, nowMonth);
+  const stagedDrops = groupByMonth(stagedCodes, nowMonth);
 
-  // The manager list is the one place that shows every month. Ordered oldest drop first
-  // so it reads expired → current → staged, matching the order of the sections above it.
+  // The manager list is the one place that shows every code. Ordered stale → live →
+  // staged, matching the order of the sections above it. Unlabelled codes sort first
+  // (empty string beats any month key), which is where they belong: they're either the
+  // pre-scheduling set about to be replaced, or already superseded.
   // `|| 0` on createdAt for the same reason as the listener's sort.
   const managerCodes = [...codes].sort((a, b) => {
-    const ka = a.monthKey || nowMonth, kb = b.monthKey || nowMonth;
+    const ka = a.monthKey || "", kb = b.monthKey || "";
     if (ka !== kb) return ka < kb ? -1 : 1;
     return (a.createdAt || 0) - (b.createdAt || 0);
   });
+
+  // Ids are the fastest way to ask "which bucket is this row in?" while rendering the
+  // manager list, since the partition already did the work.
+  const liveIds = new Set(liveCodes.map(c => c.id));
+  const stagedIds = new Set(stagedCodes.map(c => c.id));
 
   // Current month plus the next three, so a drop can be staged well before month end.
   const monthOptions = [0, 1, 2, 3].map(n => shiftMonthKey(nowMonth, n));
 
   // Merge optimistic
-  const merged = activeCodes.map(c => optimistic[c.id] ? { ...c, ...optimistic[c.id], _opt: true } : c);
+  const merged = liveCodes.map(c => optimistic[c.id] ? { ...c, ...optimistic[c.id], _opt: true } : c);
 
   const sorted = filter === "all"
     ? [...merged].sort((a, b) => (toMs(b.takenAt) || b.createdAt) - (toMs(a.takenAt) || a.createdAt))
@@ -1589,16 +1594,16 @@ export default function App() {
   let emptyIcon = "🔍";
   let emptyTitle = "No results";
   let emptySub = "Try changing your filter or search";
-  if (activeCodes.length === 0) {
+  if (liveCodes.length === 0) {
     emptyIcon = "📅";
     emptyTitle = `No codes for ${monthLabel(nowMonth)}`;
-    if (scheduledDrops.length) {
-      const [nextKey, nextCodes] = scheduledDrops[0];
+    if (stagedDrops.length) {
+      const [nextKey, nextCodes] = stagedDrops[0];
       emptySub = `${nextCodes.length} code(s) ready for ${monthLabel(nextKey)} — they go live on the 1st.`;
-    } else if (expiredCodes.length) {
+    } else if (staleCodes.length) {
       emptySub = isAdmin
-        ? `${expiredCodes.length} code(s) from last month expired and are hidden. Add this month's drop via Manage Codes.`
-        : "Last month's codes have expired. Ask an admin to add this month's codes.";
+        ? `${staleCodes.length} old code(s) are hidden because they no longer work. Add this month's drop via Manage Codes.`
+        : "Last month's codes have stopped working. Ask an admin to add this month's codes.";
     } else {
       emptySub = isAdmin ? "Add codes via Manage Codes" : "Ask an admin to add this month's codes";
     }
@@ -1634,9 +1639,9 @@ export default function App() {
             <span className="pill month" title={`Showing codes for ${monthLabel(nowMonth)}`}>
               {monthLabelShort(nowMonth)}
             </span>
-            {isAdmin && scheduledCodes.length > 0 && (
-              <span className="pill sched" title={`${scheduledCodes.length} code(s) staged for a future month`}>
-                <span className="pill-dot"></span>{scheduledCodes.length} scheduled
+            {isAdmin && stagedCodes.length > 0 && (
+              <span className="pill sched" title={`${stagedCodes.length} code(s) staged for a future month`}>
+                <span className="pill-dot"></span>{stagedCodes.length} scheduled
               </span>
             )}
             <span className="pill live">
@@ -1902,8 +1907,8 @@ export default function App() {
               </select>
               <div className={`drop-note${dropMonth === nowMonth ? "" : " sched"}`}>
                 {dropMonth === nowMonth
-                  ? "Codes added below go live straight away."
-                  : `Codes added below stay hidden from staff until 1 ${monthLabel(dropMonth)}, then take over automatically — this month's codes are removed for you.`}
+                  ? "Codes added below go live straight away, and every older code is removed for you once they're in."
+                  : `Codes added below stay hidden from staff until 1 ${monthLabel(dropMonth)}. When that month starts they take over, and every older code is removed automatically.`}
               </div>
             </div>
 
@@ -1928,18 +1933,20 @@ export default function App() {
             </div>
 
             {/* Scheduled drops */}
-            {scheduledDrops.length > 0 && (
+            {stagedDrops.length > 0 && (
               <div className="mgr-section">
                 <div className="mgr-head">
-                  <span>Scheduled Drops <span className="mgr-count">{scheduledCodes.length}</span></span>
+                  <span>Scheduled Drops <span className="mgr-count">{stagedCodes.length}</span></span>
                 </div>
                 <div className="sched-list">
-                  {scheduledDrops.map(([key, list]) => (
+                  {stagedDrops.map(([key, list]) => (
                     <div key={key} className="sched-item">
                       <span className="bdg sched"><span className="bdg-dot"></span>Staged</span>
                       <div className="sched-main">
                         <div className="sched-month">{monthLabel(key)}</div>
-                        <div className="sched-meta">{list.length} code(s) · goes live 1 {monthLabel(key)}</div>
+                        <div className="sched-meta">
+                          {list.length} code(s) · goes live 1 {monthLabel(key)}, replacing everything older
+                        </div>
                       </div>
                       <button className="btn-del"
                         onClick={() => setDropDelConfirm({ monthKey: key, ids: list.map(c => c.id) })}>
@@ -1951,22 +1958,22 @@ export default function App() {
               </div>
             )}
 
-            {/* Expired codes awaiting cleanup */}
-            {expiredCodes.length > 0 && (
+            {/* Old codes awaiting cleanup */}
+            {staleCodes.length > 0 && (
               <div className="mgr-section">
                 <div className="mgr-head">
-                  <span>Expired Codes <span className="mgr-count">{expiredCodes.length}</span></span>
+                  <span>Old Codes <span className="mgr-count">{staleCodes.length}</span></span>
                 </div>
                 <div className="exp-box">
                   <div className="exp-main">
-                    <div className="exp-title">{expiredDrops.map(([key]) => monthLabelShort(key)).join(", ")}</div>
+                    <div className="exp-title">{describeDrops(staleCodes)}</div>
                     <div className="exp-meta">
-                      Already hidden from staff. {activeCodes.length === 0
-                        ? "They are removed automatically as soon as this month's codes are added."
-                        : "Automatic cleanup runs on load — use this if it hasn't caught up."}
+                      Already hidden from staff. {liveCodes.length === 0
+                        ? "They are removed automatically as soon as a new drop goes live."
+                        : "Cleanup runs automatically — use this if it hasn't caught up."}
                     </div>
                   </div>
-                  <button className="btn-exp-clear" onClick={clearExpired}>Clear Now</button>
+                  <button className="btn-exp-clear" onClick={clearStale}>Clear Now</button>
                 </div>
               </div>
             )}
@@ -1997,10 +2004,12 @@ export default function App() {
                 : (
                   <div className="code-list">
                     {managerCodes.map(c => {
-                      const key = c.monthKey || nowMonth;
-                      // Only non-current months get the extra chip, so the everyday case
-                      // (this month's codes) looks exactly as it did before.
-                      const state = key === nowMonth ? "" : key > nowMonth ? "sched" : "exp";
+                      // Bucket comes from the partition, not from comparing months here —
+                      // unlabelled codes are live or stale depending on whether a current
+                      // drop exists, which only the partition knows.
+                      // Only non-live codes get the extra chip, so the everyday case looks
+                      // exactly as it did before.
+                      const state = liveIds.has(c.id) ? "" : stagedIds.has(c.id) ? "sched" : "exp";
                       return (
                         <div key={c.id} className={`cl-item ${selectedCodes.has(c.id) ? "sel" : ""}`}
                           onClick={() => toggleSel(c.id)}>
@@ -2012,7 +2021,7 @@ export default function App() {
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div className="cl-name">{c.code}</div>
                             <div className="cl-meta">
-                              {monthLabelShort(key)}
+                              {c.monthKey ? monthLabelShort(c.monthKey) : "No drop month"}
                               {" · "}
                               {c.status === STATUS.TAKEN ? `Taken by ${c.takenBy || "—"} · ${formatTime(c.takenAt)}` : "Available"}
                             </div>
@@ -2020,7 +2029,7 @@ export default function App() {
                           {state && (
                             <span className={`bdg ${state}`}>
                               <span className="bdg-dot"></span>
-                              {state === "sched" ? "Staged" : "Expired"}
+                              {state === "sched" ? "Staged" : "Old"}
                             </span>
                           )}
                           <span className={`bdg ${c.status === STATUS.AVAILABLE ? "avail" : "taken"}`}>

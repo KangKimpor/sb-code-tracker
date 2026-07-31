@@ -27,7 +27,7 @@ Only 7 source files. `src/App.jsx` is a **single component, ~2160 lines**:
 - Then the `App` component — state, effects, actions, derived values, JSX
 
 `log` is module-level on purpose: it closes over nothing but `logsRef`, and keeping it out
-of the component means the rollover/backfill effects don't take it as a dependency (an
+of the component means the cleanup effect doesn't take it as a dependency (an
 in-component arrow is a new identity every render, so the effect would re-run constantly).
 
 Because the CSS occupies nearly half the file, **grep for symbols rather than trusting
@@ -47,7 +47,7 @@ Three collections. **The field types are load-bearing — get them wrong and que
 | | `takenBy` | string \| null | |
 | | `takenAt` | **Timestamp** (`serverTimestamp()`) \| null | `takeCode` |
 | | `createdAt` | **number** (`Date.now()`) | |
-| | `monthKey` | **string** `"YYYY-MM"` | `addCode`, `addBulk`, backfill effect |
+| | `monthKey` | **string** `"YYYY-MM"` — absent on codes predating the field | `addCode`, `addBulk` |
 | `activityLog` | `type`, `text` | string | `log()` |
 | | `ts` | **number** (`Date.now()`) | |
 | `releaseHistory` | `code`, `takenBy` | string | `releaseCode` |
@@ -60,20 +60,27 @@ Note the deliberate inconsistency: `createdAt` and `ts` are plain numbers, but
 
 ---
 
-## Month scoping — drop scheduling and rollover
+## Drop scheduling and automatic cleanup
 
 The business rule this implements: **a grab code only works during the calendar month it
-was issued for.** New codes are added a few days before month end, and last month's codes
-must disappear when the new month starts.
+was issued for.** New codes are added a few days before month end, and **once the new set
+is live for staff, every code that isn't part of it is deleted.**
 
-`monthKey` (`"YYYY-MM"`) is the month a code is valid for. Everything else is derived:
+Nothing about a code string reveals which month it belongs to, so `monthKey` (`"YYYY-MM"`)
+is the only record of that. `partitionCodes(codes, nowMonth)` derives everything else:
 
-| State | Condition | Behaviour |
+| Bucket | Condition | Behaviour |
 |---|---|---|
-| live | `monthKey == nowMonth` | shown in the table, claimable, counted in the stat cards |
-| staged | `monthKey > nowMonth` | hidden from the table; visible to admin under Scheduled Drops |
-| expired | `monthKey < nowMonth` | hidden immediately, then deleted by the rollover sweep |
-| unlabelled | no `monthKey` | treated as **live**, and never swept — see backfill below |
+| live | `monthKey == nowMonth`, or **unlabelled when no current-month drop exists** | shown in the table, claimable, counted in the stat cards |
+| staged | `monthKey > nowMonth` | hidden from the table; visible to admin under Scheduled Drops. **Never deleted by cleanup** — queued work, not leftovers |
+| stale | `monthKey < nowMonth`, or unlabelled once a current-month drop exists | hidden immediately, then deleted |
+
+**Unlabelled codes are positional, not dated.** Codes written before this feature have no
+`monthKey`, and rather than guessing a month for them they are the live set right up until
+a labelled drop for the current month exists — then they become stale and are swept. That
+ordering is the only reason this is safe to deploy mid-month: the codes staff are actively
+using stay visible until their replacement is genuinely in. They are never relabelled,
+which is why `firestore.rules` has no "set monthKey" transition.
 
 **The month is always zero-padded, and that is load-bearing.** It makes plain string
 comparison chronological (`"2026-09" < "2026-10"`, `"2026-12" < "2027-01"`), which is why
@@ -92,23 +99,35 @@ month" would reject every legitimate claim during the first 7 hours of each mont
 The rules validate the *format* only. Don't add a server-side month check without solving
 the timezone problem first.
 
-### The rollover sweep, and the invariant that makes it safe
+### The cleanup sweep, and the invariant that makes it safe
+
+**The trigger is "a new drop went live", not "codes were added."** A drop staged for next
+month can't replace anything yet — staff still need this month's codes until the 1st. So:
+
+- adding codes with Drop Month = **this** month cleans up immediately
+- adding codes for a **future** month cleans up the moment that month starts
 
 There is **no server-side scheduler** in this project (no Cloud Functions, no cron — see
 Decisions below), so the cleanup runs client-side in a `useEffect` on whatever browser
 happens to be open, trusting that device's clock. Two things keep that from being
 dangerous:
 
-1. **Hiding is separate from deleting.** Expired codes vanish from the table through the
-   `partitionByMonth` filter on the render path — no writes, instant, works even if the
+1. **Hiding is separate from deleting.** Stale codes vanish from the table through the
+   `partitionCodes` filter on the render path — no writes, instant, works even if the
    delete never happens. Staff can never claim a dead code, regardless.
-2. **The sweep refuses to run unless the new month already has codes** (`active.length > 0`).
-   So it can only ever *trim the tracker down to* the new drop — it can never empty it. A
-   device with its clock set a month ahead would see live codes as expired, but it would
-   also need to be holding codes for its own wrong month, which it isn't, so it skips.
+2. **The sweep refuses to run unless the live set is non-empty** (`live.length > 0`). So it
+   can only ever *trim the tracker down to* the new drop — it can never empty it. A device
+   with its clock set a month ahead sees the live drop as stale, but it would also need
+   codes for its own wrong month to pass the gate, and it has none, so it skips.
 
-Also: attempted at most once per month per session (`sweptMonth` ref, reset to `null` on
-failure so a later snapshot retries), and skipped while `connError` is set.
+The `sweep` ref carries `busy` (a snapshot arriving mid-flight can't start the same deletes
+twice) and `failedMonth` (one failure stops further attempts that month, so a permission
+error can't turn every snapshot into another round of failing batches). Skipped while
+`connError` is set.
+
+**Don't gate the sweep on a month-keyed "already done" flag.** Stale codes can appear after
+a successful sweep — e.g. someone adds a code from the Firebase console with no `monthKey`
+— and a blanket month lock would ignore them until the next reload.
 
 **Neither background effect calls `alert()`** — a deviation from the repo's error
 convention, and an intentional one. They fire unprompted on load; an error popup for a
@@ -116,23 +135,18 @@ background chore would block a staff member who just wants to grab a code. They
 `console.error` and leave the expired codes hidden. The *manual* admin equivalents
 (`clearExpired`, `deleteDrop`) do alert, because a human clicked them.
 
-### The backfill, and why unlabelled codes are treated as live
-
-Codes created before this feature have no `monthKey`. One effect labels them with the
-current month, once, in chunked batches.
-
-Unlabelled codes are deliberately classified as **live, never expired**. The sweep only
-deletes codes it could positively classify, so a labelling failure can never turn into
-data loss. The trade-off: if the app is deployed *after* a month boundary and before the
-new drop is added, the previous month's codes get labelled as the new month and stay
-visible — deploy this alongside the usual "add next month's codes early" routine and that
-window never opens.
-
 ### Duplicate detection is per month
 
 `addCode`/`addBulk` dedupe within the target month only. The same code string legitimately
 reappears in a later month's batch, and skipping it because a dead code from two months ago
 had the same value would silently drop a code from the new drop.
+
+### Background effects don't `alert()`
+
+A deviation from the repo's error convention, and an intentional one: the cleanup fires
+unprompted on load, so an error popup for a background chore would just block a staff member
+who wants to grab a code. It `console.error`s and leaves the stale codes hidden. The *manual*
+admin equivalents (`clearStale`, `deleteDrop`) do alert, because a human clicked them.
 
 ---
 
@@ -227,15 +241,18 @@ freezes a field across an update breaks the instant one document is missing that
 && request.resource.data.monthKey == resource.data.monthKey
 
 // CORRECT: Map.get(key, default) is total — same default on both sides means
-// "absent on both" compares equal, so legacy docs stay claimable.
+// "absent on both" compares equal, so unlabelled codes stay claimable.
 && request.resource.data.get('monthKey', '') == resource.data.get('monthKey', '')
 ```
 
 This matters most when **adding a field to an existing collection**: the rule is written
 against the new shape, every existing document has the old shape, and the failure mode is
-a total outage of the app's core action rather than a visibly broken feature. Use
-`.get(key, default)` for any field that is optional in practice, and `'field' in
-resource.data` when you need to branch on presence.
+a total outage of the app's core action rather than a visibly broken feature. In this app
+unlabelled codes are the live set immediately after deploy, so a direct comparison would
+have meant *nobody could take a code at all* until the next drop landed.
+
+Use `.get(key, default)` for any field that is optional in practice, and
+`'field' in resource.data` when you need to branch on presence.
 
 ([rules.Map reference](https://firebase.google.com/docs/reference/rules/rules.Map) —
 `get(key, default_value)` returns the default when the key is absent.)
@@ -459,22 +476,29 @@ shows `permission-denied` on `codes`.
 
 That last one is the clearest signal the error handling is intact.
 
-### Testing month scoping
+### Testing drop scheduling
 
 The behaviour is time-dependent, so the only honest test is to move the clock. Change the
 **OS** date (not just a JS variable — `new Date()` reads the system clock) and reload:
 
-- Set Drop Month to next month, bulk add codes → they do **not** appear in the table, and
-  show under Scheduled Drops with a "Staged" badge
-- Roll the OS clock to the 1st of that month, reload → staged codes are now live, last
-  month's are gone from the table, Activity Log gains a `Month rollover — removed N…` entry
-- **The important one:** with *only* last month's codes on file (no new drop), roll the
-  clock forward → the table shows "No codes for <month>" and last month's codes are hidden,
-  but **still present in Firestore**. The sweep must refuse to run. If they get deleted
-  here, the `active.length > 0` guard is broken and the tracker can be emptied.
+- **Migration:** with only unlabelled codes on file, load the app → they must still be
+  visible and claimable, and nothing is deleted
+- Set Drop Month to next month, bulk add → the new codes do **not** appear in the table,
+  they show under Scheduled Drops with a "Staged" badge, and the old codes are still live
+- Roll the OS clock to the 1st of that month, reload → staged codes are now live, the old
+  ones are gone from the table *and* from Firestore, and the Activity Log gains a
+  `<Month> drop live — removed N old code(s)…` entry
+- Set Drop Month to the **current** month and add codes → the old codes are removed straight
+  away, no clock change needed
+- Stage two future months, then roll into the first → the second must still be staged, not
+  deleted
+- **The important one:** with *only* old codes on file (no new drop), roll the clock
+  forward → the table shows "No codes for <month>" and the old codes are hidden, but
+  **still present in Firestore**. The sweep must refuse to run. If they get deleted here,
+  the `live.length > 0` guard is broken and the tracker can be emptied.
 - Set the clock a month *ahead* of a live drop → nothing is deleted (same guard)
-- Claim a code, then roll into the next month → the expired taken code is removed too, and
-  the rollover log entry notes how many had been taken
+- Claim a code, then roll into the next month → the old taken code is removed too, and the
+  log entry notes how many had been taken
 
 Reset the clock afterwards. Anything written while the clock was wrong keeps that
 `monthKey`, so clean up test codes before switching back.
