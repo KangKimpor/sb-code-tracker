@@ -17,12 +17,18 @@ verified against the actual code, not assumed.
 
 ### File layout
 
-Only 7 source files. `src/App.jsx` is a **single component, 1708 lines**:
+Only 7 source files. `src/App.jsx` is a **single component, ~2160 lines**:
 
 - Lines 1–39: imports, Firebase init, constants (`MONTH_MS`, `ADMIN_PIN`, `STATUS`)
-- Lines 41–808: one 767-line CSS template literal, injected via `<style>{styles}</style>`
-- Lines 811–841: helpers (`toMs`, `formatTime`, `formatTimeShort`, `csvSafe`)
-- Lines 843+: the `App` component — state, effects, actions, then JSX
+- Lines 41–863: one ~820-line CSS template literal, injected via `<style>{styles}</style>`
+- After the CSS: module-level helpers — `toMs`, `formatTime`, `formatTimeShort`, `csvSafe`,
+  the month-scoping block (`monthKeyOf`, `currentMonthKey`, `shiftMonthKey`, `monthLabel`,
+  `monthLabelShort`, `partitionByMonth`, `groupByMonth`), and `log`
+- Then the `App` component — state, effects, actions, derived values, JSX
+
+`log` is module-level on purpose: it closes over nothing but `logsRef`, and keeping it out
+of the component means the rollover/backfill effects don't take it as a dependency (an
+in-component arrow is a new identity every render, so the effect would re-run constantly).
 
 Because the CSS occupies nearly half the file, **grep for symbols rather than trusting
 line numbers** — they shift on every change.
@@ -41,6 +47,7 @@ Three collections. **The field types are load-bearing — get them wrong and que
 | | `takenBy` | string \| null | |
 | | `takenAt` | **Timestamp** (`serverTimestamp()`) \| null | `takeCode` |
 | | `createdAt` | **number** (`Date.now()`) | |
+| | `monthKey` | **string** `"YYYY-MM"` | `addCode`, `addBulk`, backfill effect |
 | `activityLog` | `type`, `text` | string | `log()` |
 | | `ts` | **number** (`Date.now()`) | |
 | `releaseHistory` | `code`, `takenBy` | string | `releaseCode` |
@@ -50,6 +57,82 @@ Three collections. **The field types are load-bearing — get them wrong and que
 Note the deliberate inconsistency: `createdAt` and `ts` are plain numbers, but
 `takenAt` and `releasedAt` are Firestore Timestamps. `toMs()` normalises both when reading.
 **When querying, the comparison value must match the stored type.** See gotcha #1.
+
+---
+
+## Month scoping — drop scheduling and rollover
+
+The business rule this implements: **a grab code only works during the calendar month it
+was issued for.** New codes are added a few days before month end, and last month's codes
+must disappear when the new month starts.
+
+`monthKey` (`"YYYY-MM"`) is the month a code is valid for. Everything else is derived:
+
+| State | Condition | Behaviour |
+|---|---|---|
+| live | `monthKey == nowMonth` | shown in the table, claimable, counted in the stat cards |
+| staged | `monthKey > nowMonth` | hidden from the table; visible to admin under Scheduled Drops |
+| expired | `monthKey < nowMonth` | hidden immediately, then deleted by the rollover sweep |
+| unlabelled | no `monthKey` | treated as **live**, and never swept — see backfill below |
+
+**The month is always zero-padded, and that is load-bearing.** It makes plain string
+comparison chronological (`"2026-09" < "2026-10"`, `"2026-12" < "2027-01"`), which is why
+the partition is three `===`/`<`/`>` checks and no date parsing. An unpadded `"2026-9"`
+would sort *after* `"2026-10"` and the code would expire two months early — hence the
+regex check in `firestore.rules`, and why `monthKeyOf` is the only place keys are built.
+
+### Local clock, not UTC — in the app *and* in the rules
+
+Months resolve from `new Date()` on the client, so the switchover happens at **local**
+midnight. Staff are in UTC+7 and expect the 1st to mean their 1st.
+
+This is also why `firestore.rules` deliberately does **not** validate `monthKey` against
+the current month. `request.time` is UTC, so a rule like "monthKey must equal the server's
+month" would reject every legitimate claim during the first 7 hours of each month in ICT.
+The rules validate the *format* only. Don't add a server-side month check without solving
+the timezone problem first.
+
+### The rollover sweep, and the invariant that makes it safe
+
+There is **no server-side scheduler** in this project (no Cloud Functions, no cron — see
+Decisions below), so the cleanup runs client-side in a `useEffect` on whatever browser
+happens to be open, trusting that device's clock. Two things keep that from being
+dangerous:
+
+1. **Hiding is separate from deleting.** Expired codes vanish from the table through the
+   `partitionByMonth` filter on the render path — no writes, instant, works even if the
+   delete never happens. Staff can never claim a dead code, regardless.
+2. **The sweep refuses to run unless the new month already has codes** (`active.length > 0`).
+   So it can only ever *trim the tracker down to* the new drop — it can never empty it. A
+   device with its clock set a month ahead would see live codes as expired, but it would
+   also need to be holding codes for its own wrong month, which it isn't, so it skips.
+
+Also: attempted at most once per month per session (`sweptMonth` ref, reset to `null` on
+failure so a later snapshot retries), and skipped while `connError` is set.
+
+**Neither background effect calls `alert()`** — a deviation from the repo's error
+convention, and an intentional one. They fire unprompted on load; an error popup for a
+background chore would block a staff member who just wants to grab a code. They
+`console.error` and leave the expired codes hidden. The *manual* admin equivalents
+(`clearExpired`, `deleteDrop`) do alert, because a human clicked them.
+
+### The backfill, and why unlabelled codes are treated as live
+
+Codes created before this feature have no `monthKey`. One effect labels them with the
+current month, once, in chunked batches.
+
+Unlabelled codes are deliberately classified as **live, never expired**. The sweep only
+deletes codes it could positively classify, so a labelling failure can never turn into
+data loss. The trade-off: if the app is deployed *after* a month boundary and before the
+new drop is added, the previous month's codes get labelled as the new month and stay
+visible — deploy this alongside the usual "add next month's codes early" routine and that
+window never opens.
+
+### Duplicate detection is per month
+
+`addCode`/`addBulk` dedupe within the target month only. The same code string legitimately
+reappears in a later month's batch, and skipping it because a dead code from two months ago
+had the same value would silently drop a code from the new drop.
 
 ---
 
@@ -133,7 +216,31 @@ silently stops logging, relax those two lines to `is number`.
 `serverTimestamp()` field is briefly `null`. `toMs()`/`formatTime()` return `""` for
 this, so it shows as blank for a moment. Expected; don't "fix" it.
 
-### 7. Rules are safe to commit publicly
+### 7. Reading a field that doesn't exist is an *error* in rules — it denies the write
+
+Not `null`, not `undefined` — an error, which fails the whole condition. So a rule that
+freezes a field across an update breaks the instant one document is missing that field:
+
+```
+// BREAKS for any doc written before monthKey existed: reading resource.data.monthKey
+// errors, the CLAIM branch evaluates false, and the code becomes unclaimable forever.
+&& request.resource.data.monthKey == resource.data.monthKey
+
+// CORRECT: Map.get(key, default) is total — same default on both sides means
+// "absent on both" compares equal, so legacy docs stay claimable.
+&& request.resource.data.get('monthKey', '') == resource.data.get('monthKey', '')
+```
+
+This matters most when **adding a field to an existing collection**: the rule is written
+against the new shape, every existing document has the old shape, and the failure mode is
+a total outage of the app's core action rather than a visibly broken feature. Use
+`.get(key, default)` for any field that is optional in practice, and `'field' in
+resource.data` when you need to branch on presence.
+
+([rules.Map reference](https://firebase.google.com/docs/reference/rules/rules.Map) —
+`get(key, default_value)` returns the default when the key is absent.)
+
+### 8. Rules are safe to commit publicly
 
 Rules are enforced server-side; knowing them grants nothing. Firebase's own tooling
 assumes `firestore.rules` lives in version control. Collection and field names are
@@ -279,8 +386,16 @@ shapes the layout.** Removing the file changes the UI. It also uses nested `@med
 recompute every render. With one component and no memoized children, `useMemo` would
 prevent zero re-renders — only array work, which is microseconds at this scale.
 
-**The 767-line CSS string stays in the JS bundle.** Moving it to a `.css` file would cut
+**The ~820-line CSS string stays in the JS bundle.** Moving it to a `.css` file would cut
 JS size and enable separate caching, but it's a restructure with no functional gain.
+
+**No server-side scheduler, deliberately.** The monthly rollover is a client-side effect,
+not a Cloud Function or Vercel Cron. Adding one means `firebase-admin`, a service-account
+secret, and a deploy pipeline that doesn't exist here — for a job whose entire output is
+"delete some documents once a month". The client-side version is safe because hiding is
+decoupled from deleting and the sweep can't empty the tracker (see Month scoping). If
+scheduled infrastructure ever arrives for another reason, moving the sweep there is a
+clean win: it would no longer depend on someone having the app open.
 
 ---
 
@@ -293,6 +408,9 @@ JS size and enable separate caching, but it's a restructure with no functional g
 2. **Unclaimed code values are readable.** The listener downloads the whole collection, so
    masking in the table is cosmetic only. Real protection needs the value in a separate
    doc gated by rules, or a Cloud Function that returns it on successful claim.
+   **This extends to staged drops:** next month's codes are hidden from the UI, not from
+   the network, so they can be read in DevTools before their month starts. Same mechanism,
+   same fix. Worth knowing before staging a drop weeks ahead.
 3. **Deployed rules can't be verified from the repo.** `firestore.rules` is the intended
    state; the live rules are whatever is in the Firebase console. Keep them in sync manually.
 
@@ -319,6 +437,16 @@ against a live database. Behaviour changes need the manual checks below.
    verify the `request.time` checks (gotcha #4).
 5. If Take fails: console shows `permission-denied` → restore the saved rules.
 
+**Rules and app code that change together must be published together.** Vercel deploys on
+merge; rules do not. Any release that adds or renames a field on `codes` has a window
+between the two where writes fail with `permission-denied`, because the `hasOnly()`
+whitelist rejects the new shape. Publish the rules first — they are backwards-compatible
+with the currently deployed app in a way the reverse is not (a new *allowed* key is
+harmless to a client that never sends it).
+
+Symptom of getting this wrong: adding a code shows "Failed to add code", and the console
+shows `permission-denied` on `codes`.
+
 ### Manual test checklist for Firestore changes
 
 - Take a code → reveal screen shows the code → row updates to Taken
@@ -330,3 +458,23 @@ against a live database. Behaviour changes need the manual checks below.
   Add shows "Failed to add code" **and the typed text is still in the box**
 
 That last one is the clearest signal the error handling is intact.
+
+### Testing month scoping
+
+The behaviour is time-dependent, so the only honest test is to move the clock. Change the
+**OS** date (not just a JS variable — `new Date()` reads the system clock) and reload:
+
+- Set Drop Month to next month, bulk add codes → they do **not** appear in the table, and
+  show under Scheduled Drops with a "Staged" badge
+- Roll the OS clock to the 1st of that month, reload → staged codes are now live, last
+  month's are gone from the table, Activity Log gains a `Month rollover — removed N…` entry
+- **The important one:** with *only* last month's codes on file (no new drop), roll the
+  clock forward → the table shows "No codes for <month>" and last month's codes are hidden,
+  but **still present in Firestore**. The sweep must refuse to run. If they get deleted
+  here, the `active.length > 0` guard is broken and the tracker can be emptied.
+- Set the clock a month *ahead* of a live drop → nothing is deleted (same guard)
+- Claim a code, then roll into the next month → the expired taken code is removed too, and
+  the rollover log entry notes how many had been taken
+
+Reset the clock afterwards. Anything written while the clock was wrong keeps that
+`monthKey`, so clean up test codes before switching back.
