@@ -518,151 +518,264 @@ const styles = `
   .btn-pri.red { background: var(--red); box-shadow: 0 1px 4px rgba(255,59,48,0.22); }
   .btn-pri.red:hover:not(:disabled) { background: #e0352a; }
 
-  /* ─── CODE MANAGER ─── */
-  .mgr-section { margin-bottom: 22px; }
+  /* ─── CODE MANAGER SCREEN ─── */
+  /* A full screen rather than a modal. It is a long multi-section admin surface, and a
+     tall scrolling overlay on a phone was the worst part of the old UI. Fixed and
+     covering, so the staff screen underneath is left untouched in the markup. */
+  .mgr-screen {
+    position: fixed; inset: 0; z-index: 60;
+    background: var(--bg); overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    animation: mgrIn 0.24s var(--ease-out) both;
+  }
+  @keyframes mgrIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .mgr-col { width: 100%; max-width: 560px; margin: 0 auto; padding: 0 16px 108px; }
+
+  .mgr-topbar {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    margin: 0 -16px 20px; padding: 11px 16px;
+    position: sticky; top: 0; z-index: 5;
+  }
+  .mgr-logo { height: 32px; width: auto; max-width: 76px; object-fit: contain; display: block; flex-shrink: 0; }
+  .mgr-title {
+    flex: 1; text-align: center;
+    font-size: 19px; font-weight: 700; letter-spacing: -0.5px; color: var(--text);
+  }
+  .btn-done {
+    background: var(--surface-2); border: none; border-radius: 20px;
+    font-family: var(--font); font-size: 13.5px; font-weight: 600; color: var(--text-2);
+    padding: 7px 15px; cursor: pointer; flex-shrink: 0; transition: background 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-done:hover { background: var(--surface-3); }
+
+  .mgr-section { margin-bottom: 26px; }
   .mgr-head {
-    display: flex; align-items: center; justify-content: space-between;
-    font-size: 11px; font-weight: 600; color: var(--text-4);
-    text-transform: uppercase; letter-spacing: 0.7px;
-    padding-bottom: 8px; border-bottom: 1px solid var(--border);
-    margin-bottom: 12px;
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+    font-size: 17px; font-weight: 700; letter-spacing: -0.4px; color: var(--text);
+    margin-bottom: 11px;
   }
   .mgr-count {
     background: var(--surface-2); border-radius: 20px;
-    padding: 1px 8px; font-size: 11px; color: var(--text-3);
-    font-weight: 600;
+    padding: 2px 9px; font-size: 12px; color: var(--text-3); font-weight: 600;
   }
-  .mgr-row { display: flex; gap: 8px; }
-  .mgr-row .f-input { flex: 1; }
 
-  /* Drop scheduling */
-  .drop-note { font-size: 11.5px; color: var(--text-4); margin-top: 8px; line-height: 1.45; }
+  /* White card grouping a section's controls */
+  .panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-xl); box-shadow: var(--sh-sm); padding: 16px;
+  }
+  .panel-split { border-top: 1px solid var(--border); margin: 16px -16px 0; padding: 16px 16px 0; }
+  .panel-split-label {
+    font-size: 11px; font-weight: 700; color: var(--text-4);
+    text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 9px;
+  }
+
+  .drop-note { font-size: 12.5px; color: var(--text-3); margin-top: 10px; line-height: 1.45; }
   .drop-note.sched { color: #8e34c4; font-weight: 500; }
 
-  .sched-list { border: 1px solid var(--border); border-radius: var(--r-sm); }
-  .sched-item {
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 12px; border-bottom: 1px solid rgba(60,60,67,0.06);
+  .bulk-ta {
+    width: 100%; background: var(--surface-2);
+    border: 1.5px solid var(--border-mid); border-radius: var(--r-sm);
+    padding: 12px 14px; font-family: var(--font-mono); font-size: 13px;
+    color: var(--text); outline: none; resize: vertical; min-height: 108px;
+    transition: all 0.16s; -webkit-appearance: none;
   }
-  .sched-item:last-child { border-bottom: none; }
-  .sched-main { flex: 1; min-width: 0; }
-  .sched-month { font-size: 13px; font-weight: 600; color: var(--text); }
-  .sched-meta { font-size: 11px; color: var(--text-4); }
+  .bulk-ta:focus { border-color: var(--blue); background: var(--surface); box-shadow: 0 0 0 3px var(--blue-light); }
+  .bulk-hint { font-size: 12px; color: var(--text-4); margin: 7px 0 12px; line-height: 1.45; }
 
-  .exp-box {
-    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    padding: 10px 12px; border-radius: var(--r-sm);
-    background: var(--surface-2); border: 1px solid var(--border-mid);
+  /* Primary pill action, as in the design */
+  .btn-pill {
+    width: 100%; background: var(--blue); color: #fff; border: none;
+    border-radius: 999px; font-family: var(--font);
+    font-size: 15px; font-weight: 700; padding: 14px;
+    cursor: pointer; transition: background 0.16s, transform 0.16s;
+    box-shadow: 0 2px 8px rgba(0,122,255,0.28);
+    -webkit-tap-highlight-color: transparent;
   }
-  .exp-main { flex: 1; min-width: 140px; }
-  .exp-title { font-size: 13px; font-weight: 600; color: var(--text-2); }
-  .exp-meta { font-size: 11px; color: var(--text-4); line-height: 1.45; }
-  .btn-exp-clear {
-    background: none; border: 1px solid var(--border-mid);
-    border-radius: 6px; font-family: var(--font); font-size: 11.5px; font-weight: 600;
-    color: var(--text-3); padding: 5px 12px; cursor: pointer;
-    transition: all 0.15s; flex-shrink: 0; white-space: nowrap;
-  }
-  .btn-exp-clear:hover { border-color: var(--red-mid); color: var(--red); background: var(--red-light); }
+  .btn-pill:hover:not(:disabled) { background: #0069e0; }
+  .btn-pill:active:not(:disabled) { transform: scale(0.99); }
+  .btn-pill:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
 
+  .mgr-row { display: flex; gap: 8px; }
+  .mgr-row .f-input { flex: 1; }
   .btn-add {
     background: var(--text); color: #fff; border: none;
     border-radius: var(--r-sm); font-family: var(--font);
-    font-size: 13px; font-weight: 600; padding: 10px 16px;
-    cursor: pointer; transition: all 0.15s; flex-shrink: 0;
+    font-size: 14px; font-weight: 600; padding: 11px 18px;
+    cursor: pointer; transition: background 0.15s; flex-shrink: 0;
     -webkit-tap-highlight-color: transparent;
   }
   .btn-add:hover { background: #3a3a3c; }
   .btn-add:active { transform: scale(0.97); }
 
-  .bulk-ta {
-    width: 100%; background: var(--surface-2);
-    border: 1.5px solid var(--border-mid);
-    border-radius: var(--r-sm); padding: 10px 14px;
-    font-family: var(--font-mono); font-size: 12.5px;
-    color: var(--text); outline: none; resize: vertical;
-    min-height: 80px; margin-bottom: 6px;
-    transition: all 0.16s; -webkit-appearance: none;
+  /* ─── SCHEDULED DROPS ─── */
+  .drop-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-lg); box-shadow: var(--sh-sm);
+    padding: 14px 16px; display: flex; align-items: center; gap: 12px;
   }
-  .bulk-ta:focus { border-color: var(--blue); background: var(--surface); box-shadow: 0 0 0 3px var(--blue-light); }
-  .bulk-hint { font-size: 11px; color: var(--text-4); margin-bottom: 10px; }
-
-  .btn-bulk {
-    width: 100%; background: var(--surface-2);
-    border: 1px solid var(--border-mid); border-radius: var(--r-sm);
-    font-family: var(--font); font-size: 13px; font-weight: 600;
-    color: var(--text-3); padding: 10px; cursor: pointer;
-    transition: all 0.15s;
+  .drop-card + .drop-card { margin-top: 10px; }
+  .drop-main { flex: 1; min-width: 0; }
+  .drop-month { font-size: 15.5px; font-weight: 700; color: var(--text); letter-spacing: -0.3px; }
+  .drop-meta { font-size: 12.5px; color: var(--text-3); margin-top: 2px; }
+  .btn-batch {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    background: none; border: none; padding: 0; cursor: pointer; flex-shrink: 0;
+    font-family: var(--font); -webkit-tap-highlight-color: transparent;
   }
-  .btn-bulk:hover:not(:disabled) { background: var(--surface-3); color: var(--text-2); }
-  .btn-bulk:disabled { opacity: 0.35; cursor: default; }
-
-  /* Code list */
-  .code-list {
-    max-height: 220px; overflow-y: auto;
-    border: 1px solid var(--border); border-radius: var(--r-sm);
-  }
-  .code-list::-webkit-scrollbar { width: 4px; }
-  .code-list::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 4px; }
-
-  .cl-item {
-    display: flex; align-items: center;
-    padding: 9px 12px; border-bottom: 1px solid rgba(60,60,67,0.06);
-    gap: 10px; transition: background 0.12s; cursor: pointer;
-    user-select: none; -webkit-user-select: none;
-  }
-  .cl-item:last-child { border-bottom: none; }
-  .cl-item:hover { background: var(--surface-2); }
-  .cl-item.sel { background: var(--blue-light); }
-
-  .cl-check {
-    width: 17px; height: 17px; border-radius: 5px;
-    border: 1.5px solid var(--border-mid);
+  .btn-batch-ico {
+    width: 34px; height: 34px; border-radius: 10px;
+    background: var(--red-light); color: var(--red);
     display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0; background: var(--surface);
+    transition: background 0.15s;
+  }
+  .btn-batch:hover .btn-batch-ico { background: var(--red-mid); }
+  .btn-batch-label { font-size: 10px; font-weight: 700; color: var(--red); letter-spacing: -0.1px; }
+
+  /* ─── NOTICES (expired, unlabelled) ─── */
+  .notice {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-lg); box-shadow: var(--sh-sm); padding: 15px 16px;
+  }
+  .notice-title { font-size: 14.5px; font-weight: 700; color: var(--text); letter-spacing: -0.2px; }
+  .notice-body { font-size: 12.5px; color: var(--text-3); line-height: 1.5; margin-top: 4px; }
+  .notice-acts { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .btn-notice {
+    background: var(--surface-2); border: none; border-radius: 10px;
+    font-family: var(--font); font-size: 13px; font-weight: 600; color: var(--text-2);
+    padding: 9px 14px; cursor: pointer; transition: background 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-notice:hover { background: var(--surface-3); }
+  .btn-notice.danger { background: var(--red-light); color: var(--red); }
+  .btn-notice.danger:hover { background: var(--red-mid); }
+
+  /* ─── ALL CODES TABLE ─── */
+  .tbl-search { position: relative; width: 100%; margin-bottom: 11px; }
+  .tbl-search .search-ico { left: 14px; }
+  .tbl-search input {
+    width: 100%; background: var(--surface);
+    border: 1px solid var(--border-mid); border-radius: var(--r-sm);
+    padding: 11px 14px 11px 40px;
+    font-family: var(--font); font-size: 14px; color: var(--text);
+    outline: none; transition: border-color 0.16s, box-shadow 0.16s;
+    -webkit-appearance: none;
+  }
+  .tbl-search input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-light); }
+  .tbl-search input::placeholder { color: var(--text-4); }
+
+  .tbl-wrap {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-lg); box-shadow: var(--sh-sm); overflow: hidden;
+  }
+  /* Six columns fit a phone at this size, but a long staff name should scroll rather
+     than squeeze the code column into an ellipsis. */
+  .tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tbl { width: 100%; border-collapse: collapse; }
+  .tbl th {
+    text-align: left; font-size: 10.5px; font-weight: 700; color: var(--text-2);
+    text-transform: uppercase; letter-spacing: 0.4px;
+    background: rgba(116,116,128,0.05); padding: 9px 10px;
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  .tbl td {
+    padding: 11px 10px; font-size: 12.5px; vertical-align: middle;
+    border-bottom: 1px solid rgba(60,60,67,0.06); white-space: nowrap;
+  }
+  .tbl tbody tr:last-child td { border-bottom: none; }
+  .tbl tbody tr.sel { background: var(--blue-light); }
+  .tbl tbody tr { cursor: pointer; }
+  .tbl-code { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
+  .tbl-month { color: var(--text-3); }
+  .tbl-who { color: var(--text-2); max-width: 132px; overflow: hidden; text-overflow: ellipsis; }
+  .tbl-none { color: var(--text-4); }
+  .th-check, .td-check { width: 36px; padding-right: 0; }
+  .th-act, .td-act { text-align: center; }
+  .tbl-empty { padding: 28px 16px; text-align: center; color: var(--text-4); font-size: 13px; }
+
+  .st {
+    display: inline-block; border-radius: 999px; padding: 3px 9px;
+    font-size: 10px; font-weight: 700; color: #fff; letter-spacing: 0.2px;
+  }
+  .st.free { background: var(--green-strong); }
+  .st.claimed { background: var(--red); }
+  .st.staged { background: #af52de; }
+  .st.expired { background: var(--text-4); }
+
+  .cbx {
+    width: 18px; height: 18px; border-radius: 5px;
+    border: 1.5px solid var(--border-mid); background: var(--surface);
+    display: flex; align-items: center; justify-content: center;
     transition: all 0.14s var(--ease-spring);
   }
-  .cl-item.sel .cl-check { background: var(--blue); border-color: var(--blue); }
-  .cl-check-ico { display: none; }
-  .cl-item.sel .cl-check-ico { display: block; }
+  .cbx.on { background: var(--blue); border-color: var(--blue); }
+  .cbx svg { display: none; }
+  .cbx.on svg { display: block; }
 
-  .cl-name { font-size: 13px; font-weight: 600; color: var(--text); font-family: var(--font-mono); flex: 1; }
-  .cl-meta { font-size: 11px; color: var(--text-4); }
-
-  .btn-del {
-    background: none; border: 1px solid var(--border);
-    border-radius: 6px; font-family: var(--font);
-    font-size: 11.5px; color: var(--text-4);
-    padding: 3px 9px; cursor: pointer; transition: all 0.15s; flex-shrink: 0;
+  .tbl-acts { display: flex; align-items: center; justify-content: center; gap: 4px; }
+  .icon-btn {
+    display: inline-flex; flex-direction: column; align-items: center; gap: 1px;
+    background: none; border: none; padding: 3px 5px; cursor: pointer;
+    font-family: var(--font); color: var(--blue); border-radius: 8px;
+    transition: background 0.15s; -webkit-tap-highlight-color: transparent;
   }
-  .btn-del:hover { border-color: var(--red-mid); color: var(--red); background: var(--red-light); }
+  .icon-btn span { font-size: 9px; font-weight: 700; letter-spacing: -0.1px; }
+  .icon-btn:hover { background: var(--blue-light); }
+  .icon-btn.danger { color: var(--red); }
+  .icon-btn.danger:hover { background: var(--red-light); }
 
-  .list-empty { padding: 24px; text-align: center; color: var(--text-4); font-size: 13px; }
-
-  /* Bulk action bar */
+  /* Bulk selection bar */
   .bulk-bar {
     display: flex; align-items: center; justify-content: space-between;
-    gap: 8px; padding: 8px 12px;
+    gap: 8px; padding: 9px 12px; margin-bottom: 10px;
     background: var(--blue-light); border: 1px solid var(--blue-mid);
-    border-radius: var(--r-sm); margin-bottom: 10px; flex-wrap: wrap;
+    border-radius: var(--r-sm); flex-wrap: wrap;
   }
   .bulk-bar-left { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .bulk-sel-count { font-size: 12.5px; font-weight: 600; color: var(--blue); }
+  .bulk-sel-count { font-size: 12.5px; font-weight: 700; color: var(--blue); }
   .btn-sel {
     background: none; border: 1px solid var(--blue-mid);
-    border-radius: 6px; font-family: var(--font); font-size: 11.5px;
-    font-weight: 500; color: var(--blue); padding: 3px 10px;
-    cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    border-radius: 7px; font-family: var(--font); font-size: 11.5px;
+    font-weight: 600; color: var(--blue); padding: 4px 10px;
+    cursor: pointer; transition: background 0.15s; white-space: nowrap;
   }
   .btn-sel:hover { background: var(--blue-mid); }
   .btn-del-sel {
     background: var(--red); color: #fff; border: none;
-    border-radius: 6px; font-family: var(--font); font-size: 11.5px;
-    font-weight: 600; padding: 5px 12px; cursor: pointer;
-    transition: all 0.15s; flex-shrink: 0; white-space: nowrap;
+    border-radius: 7px; font-family: var(--font); font-size: 11.5px;
+    font-weight: 700; padding: 6px 12px; cursor: pointer;
+    transition: background 0.15s; flex-shrink: 0; white-space: nowrap;
   }
   .btn-del-sel:hover { background: var(--red-dark); }
   .btn-del-sel:disabled { opacity: 0.35; cursor: default; }
+
+  /* ─── BOTTOM NAV ─── */
+  /* Two tabs because there are two screens. Dashboard and Settings were in the design
+     but neither exists, and inventing them would be a dead end for whoever taps them. */
+  .bottom-nav {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    max-width: 560px; margin: 0 auto; z-index: 70;
+    background: rgba(255,255,255,0.94);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-top: 1px solid var(--border);
+    display: flex; padding: 5px 8px;
+    padding-bottom: calc(5px + env(safe-area-inset-bottom));
+  }
+  .nav-tab {
+    flex: 1; background: none; border: none; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 7px 4px; font-family: var(--font); color: var(--text-4);
+    transition: color 0.15s; -webkit-tap-highlight-color: transparent;
+  }
+  .nav-tab span { font-size: 10.5px; font-weight: 600; letter-spacing: -0.1px; }
+  .nav-tab.active { color: var(--blue); }
+  .page.with-nav { padding-bottom: 96px; }
 
   /* Activity log */
   .act-log { max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--r-sm); }
@@ -948,6 +1061,10 @@ export default function App() {
   // Pending "delete this whole scheduled drop" confirmation: { monthKey, ids }
   const [dropDelConfirm, setDropDelConfirm] = useState(null);
 
+  // The manager table has its own search. Kept separate from the staff list's `search`
+  // so filtering one never silently filters the other.
+  const [mgrSearch, setMgrSearch] = useState("");
+
   // Guard for the automatic cleanup below. A ref, not state: it must not trigger a
   // re-render, and it has to be readable synchronously so a snapshot arriving mid-flight
   // can't kick off the same batch of deletes twice.
@@ -1015,7 +1132,9 @@ export default function App() {
       if (e.key !== "Escape") return;
       if (dropDelConfirm) setDropDelConfirm(null);
       else if (bulkDelConfirm) setBulkDelConfirm(false);
-      else if (codeManager) { setCodeManager(false); setSelectedCodes(new Set()); }
+      // Mirrors closeManager, which is defined further down and would otherwise have to
+      // become an effect dependency.
+      else if (codeManager) { setCodeManager(false); setSelectedCodes(new Set()); setMgrSearch(""); }
       else if (releaseConfirm) setReleaseConfirm(null);
       else if (takeModal) { setTakeModal(null); setStaffName(""); setRevealedCode(null); setTakeError(""); setCopied(false); }
       else if (pinModal) { setPinModal(false); setPin(""); setPinError(""); }
@@ -1511,9 +1630,23 @@ export default function App() {
   });
 
   // Ids are the fastest way to ask "which bucket is this row in?" while rendering the
-  // manager list, since the partition already did the work.
+  // manager table, since the partition already did the work.
   const liveIds = new Set(liveCodes.map(c => c.id));
   const stagedIds = new Set(stagedCodes.map(c => c.id));
+
+  // Rows for the manager table: every month, filtered by the manager's own search box.
+  const mgrRows = mgrSearch
+    ? managerCodes.filter(c => {
+        const q = mgrSearch.toUpperCase();
+        return c.code.includes(q) || (c.takenBy || "").toUpperCase().includes(q);
+      })
+    : managerCodes;
+
+  // The manager is a full screen rather than a modal, but it is still gated on isAdmin
+  // for the same reason as before: the PIN is not a security boundary, so this only
+  // stops accidental taps.
+  const managerOpen = codeManager && isAdmin;
+  const closeManager = () => { setCodeManager(false); setSelectedCodes(new Set()); setMgrSearch(""); };
 
   // Current month plus the next three, so a drop can be staged well before month end.
   const monthOptions = [0, 1, 2, 3].map(n => shiftMonthKey(nowMonth, n));
@@ -1573,7 +1706,7 @@ export default function App() {
   return (
     <>
       <style>{styles}</style>
-      <div className="page">
+      <div className={`page${isAdmin ? " with-nav" : ""}`}>
 
         {/* ── HEADER ── */}
         <nav className="topbar">
@@ -1804,194 +1937,254 @@ export default function App() {
         </div>
       )}
 
-      {/* ── CODE MANAGER ── */}
-      {codeManager && isAdmin && (
-        <div className="overlay" onClick={() => { setCodeManager(false); setSelectedCodes(new Set()); }}>
-          <div className="modal wide" onClick={e => e.stopPropagation()}>
-            <div className="m-head">
-              <div className="m-title">Code Manager</div>
-              <div className="m-sub">Add, schedule, review, and remove codes.</div>
-            </div>
+      {/* ── CODE MANAGER SCREEN ── */}
+      {managerOpen && (
+        <div className="mgr-screen">
+          <div className="mgr-col">
 
-            {/* Drop month, applies to both add forms below */}
+            <header className="mgr-topbar">
+              <img src="/logo.png" alt="SingBuild" className="mgr-logo" />
+              <div className="mgr-title">Code Manager</div>
+              <button className="btn-done" onClick={closeManager}>Done</button>
+            </header>
+
+            {/* ── ADD CODES ── */}
             <div className="mgr-section">
               <div className="mgr-head">
-                <span>Drop Month</span>
+                <span>Add Codes</span>
                 {dropMonth !== nowMonth && <span className="mgr-count">scheduled</span>}
               </div>
-              <select className="f-select" value={dropMonth} onChange={e => setDropMonth(e.target.value)}>
-                {monthOptions.map(key => (
-                  <option key={key} value={key}>
-                    {monthLabel(key)}{key === nowMonth ? " (live now)" : ""}
-                  </option>
-                ))}
-              </select>
-              <div className={`drop-note${dropMonth === nowMonth ? "" : " sched"}`}>
-                {dropMonth === nowMonth
-                  ? "Codes added below go live straight away, alongside the ones already there. Safe to top up as often as you need."
-                  : `Codes added below stay hidden from staff until 1 ${monthLabel(dropMonth)}. When that month starts they take over, and this month's codes are removed automatically.`}
+              <div className="panel">
+                <label className="f-label" htmlFor="dropMonth">Drop month</label>
+                <select id="dropMonth" className="f-select" value={dropMonth}
+                  onChange={e => setDropMonth(e.target.value)}>
+                  {monthOptions.map(key => (
+                    <option key={key} value={key}>
+                      {monthLabel(key)}{key === nowMonth ? " (live now)" : ""}
+                    </option>
+                  ))}
+                </select>
+                <div className={`drop-note${dropMonth === nowMonth ? "" : " sched"}`}>
+                  {dropMonth === nowMonth
+                    ? "Goes live straight away, alongside the codes already there. Safe to top up as often as you need."
+                    : `Stays hidden from staff until 1 ${monthLabel(dropMonth)}. When that month starts these take over and this month's codes are removed automatically.`}
+                </div>
+
+                <div className="panel-split">
+                  <div className="panel-split-label">Bulk paste</div>
+                  <textarea className="bulk-ta" placeholder={"SB-4K92X\nSB-7Q31M\nSB-2X84B"}
+                    value={bulkText} onChange={e => setBulkText(e.target.value)} />
+                  <div className="bulk-hint">One code per line or comma separated. Duplicates within the same month are skipped.</div>
+                  <button className="btn-pill" disabled={!bulkText.trim()} onClick={addBulk}>
+                    Add Codes to Pool
+                  </button>
+                </div>
+
+                <div className="panel-split">
+                  <div className="panel-split-label">Or add one</div>
+                  <div className="mgr-row">
+                    <input className="f-input" type="text" placeholder="e.g. SB-4K92X"
+                      value={newCode} onChange={e => setNewCode(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && addCode()} />
+                    <button className="btn-add" onClick={addCode}>Add</button>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Single add */}
-            <div className="mgr-section">
-              <div className="mgr-head"><span>Add Single Code</span></div>
-              <div className="mgr-row">
-                <input className="f-input" type="text" placeholder="e.g. SB-001"
-                  value={newCode} onChange={e => setNewCode(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && addCode()} />
-                <button className="btn-add" onClick={addCode}>Add</button>
-              </div>
-            </div>
-
-            {/* Bulk add */}
-            <div className="mgr-section">
-              <div className="mgr-head"><span>Bulk Add</span></div>
-              <textarea className="bulk-ta" placeholder={"SB-001\nSB-002\nSB-003"}
-                value={bulkText} onChange={e => setBulkText(e.target.value)} />
-              <div className="bulk-hint">One code per line or comma-separated. Duplicates skipped.</div>
-              <button className="btn-bulk" disabled={!bulkText.trim()} onClick={addBulk}>Add All Codes</button>
-            </div>
-
-            {/* Scheduled drops */}
+            {/* ── SCHEDULED DROPS ── */}
             {stagedDrops.length > 0 && (
               <div className="mgr-section">
                 <div className="mgr-head">
-                  <span>Scheduled Drops <span className="mgr-count">{stagedCodes.length}</span></span>
+                  <span>Scheduled Drops</span>
+                  <span className="mgr-count">{stagedCodes.length}</span>
                 </div>
-                <div className="sched-list">
-                  {stagedDrops.map(([key, list]) => (
-                    <div key={key} className="sched-item">
-                      <span className="bdg sched"><span className="bdg-dot"></span>Staged</span>
-                      <div className="sched-main">
-                        <div className="sched-month">{monthLabel(key)}</div>
-                        <div className="sched-meta">
-                          {`${list.length} code(s) · goes live 1 ${monthLabel(key)}, replacing this month's`}
-                        </div>
-                      </div>
-                      <button className="btn-del"
-                        onClick={() => setDropDelConfirm({ monthKey: key, ids: list.map(c => c.id) })}>
-                        Delete
-                      </button>
+                {stagedDrops.map(([key, list]) => (
+                  <div key={key} className="drop-card">
+                    <div className="drop-main">
+                      <div className="drop-month">{monthLabel(key)}</div>
+                      <div className="drop-meta">{list.length} code(s) staged, live on 1 {monthLabel(key)}</div>
                     </div>
-                  ))}
-                </div>
+                    <button className="btn-batch"
+                      onClick={() => setDropDelConfirm({ monthKey: key, ids: list.map(c => c.id) })}>
+                      <span className="btn-batch-ico">
+                        <svg width="17" height="17" viewBox="0 0 16 16" fill="none">
+                          <path d="M2.5 4h11M6.5 7v4.5M9.5 7v4.5M3.5 4l.7 9.1a1 1 0 0 0 1 .9h5.6a1 1 0 0 0 1-.9L12.5 4M6 4V2.6a.6.6 0 0 1 .6-.6h2.8a.6.6 0 0 1 .6.6V4"
+                            stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </span>
+                      <span className="btn-batch-label">Delete Batch</span>
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
 
-            {/* Expired codes awaiting cleanup */}
+            {/* ── EXPIRED ── */}
             {staleCodes.length > 0 && (
               <div className="mgr-section">
                 <div className="mgr-head">
-                  <span>Expired Codes <span className="mgr-count">{staleCodes.length}</span></span>
+                  <span>Expired Codes</span>
+                  <span className="mgr-count">{staleCodes.length}</span>
                 </div>
-                <div className="exp-box">
-                  <div className="exp-main">
-                    <div className="exp-title">{describeDrops(staleCodes)}</div>
-                    <div className="exp-meta">
-                      {"Their month has passed, so they are already hidden from staff. "}
-                      {liveCodes.length === 0
-                        ? "They are removed automatically as soon as this month has codes."
-                        : "Cleanup runs automatically. Use this if it hasn't caught up."}
-                    </div>
+                <div className="notice">
+                  <div className="notice-title">{describeDrops(staleCodes)}</div>
+                  <div className="notice-body">
+                    {"Their month has passed, so they are already hidden from staff. "}
+                    {liveCodes.length === 0
+                      ? "They are removed automatically as soon as this month has codes."
+                      : "Cleanup runs automatically. Use this if it hasn't caught up."}
                   </div>
-                  <button className="btn-exp-clear" onClick={clearStale}>Clear Now</button>
+                  <div className="notice-acts">
+                    <button className="btn-notice danger" onClick={clearStale}>
+                      Remove {staleCodes.length} expired code(s)
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* Codes from before drop scheduling existed. Nothing can date them, so they
-                stay live until admin says which month they belong to. */}
+            {/* ── NO DROP MONTH ── */}
             {unlabelledCodes.length > 0 && (
               <div className="mgr-section">
                 <div className="mgr-head">
-                  <span>No Drop Month <span className="mgr-count">{unlabelledCodes.length}</span></span>
+                  <span>No Drop Month</span>
+                  <span className="mgr-count">{unlabelledCodes.length}</span>
                 </div>
-                <div className="exp-box">
-                  <div className="exp-main">
-                    <div className="exp-title">{unlabelledCodes.length} code(s) added before scheduling existed</div>
-                    <div className="exp-meta">
-                      {"Treated as live, and never removed automatically, because there is no record " +
-                       "of which month they belong to. If these are this month's codes, assign them " +
-                       "so they get cleaned up on their own. If they are leftovers, remove them."}
-                    </div>
+                <div className="notice">
+                  <div className="notice-title">{unlabelledCodes.length} code(s) added before scheduling existed</div>
+                  <div className="notice-body">
+                    {"Treated as live, and never removed automatically, because there is no record " +
+                     "of which month they belong to. If these are this month's codes, assign them " +
+                     "so they get cleaned up on their own. If they are leftovers, remove them."}
                   </div>
-                  <button className="btn-exp-clear" onClick={labelUnlabelled}>
-                    Assign to {monthLabelShort(nowMonth)}
-                  </button>
-                  <button className="btn-exp-clear" onClick={removeUnlabelled}>Remove</button>
+                  <div className="notice-acts">
+                    <button className="btn-notice" onClick={labelUnlabelled}>
+                      Assign to {monthLabelShort(nowMonth)}
+                    </button>
+                    <button className="btn-notice danger" onClick={removeUnlabelled}>Remove</button>
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* Code list */}
+            {/* ── ALL CODES ── */}
             <div className="mgr-section">
               <div className="mgr-head">
-                <span>All Codes <span className="mgr-count">{codes.length}</span></span>
+                <span>All Codes</span>
+                <span className="mgr-count">{codes.length}</span>
               </div>
 
-              {/* Bulk action bar */}
-              <div className="bulk-bar">
-                <div className="bulk-bar-left">
-                  <span className="bulk-sel-count">{selectedCodes.size} selected</span>
-                  <button className="btn-sel" onClick={selAll}>All</button>
-                  <button className="btn-sel" onClick={selAvail}>Available</button>
-                  <button className="btn-sel" onClick={selTaken}>Taken</button>
-                  <button className="btn-sel" onClick={selNone}>Clear</button>
-                </div>
-                <button className="btn-del-sel" disabled={selectedCodes.size === 0}
-                  onClick={() => setBulkDelConfirm(true)}>
-                  Delete ({selectedCodes.size})
-                </button>
+              <div className="tbl-search">
+                <span className="search-ico">
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                    <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.5"/>
+                    <path d="M11 11L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                </span>
+                <input type="text" placeholder="Search by code or staff name"
+                  value={mgrSearch} onChange={e => setMgrSearch(e.target.value)} />
               </div>
 
-              {codes.length === 0
-                ? <div className="list-empty">No codes yet.</div>
-                : (
-                  <div className="code-list">
-                    {managerCodes.map(c => {
-                      // Bucket comes from the partition rather than comparing months here,
-                      // so unlabelled codes are classified the same way everywhere.
-                      // Only non-live codes get the extra chip, so the everyday case looks
-                      // exactly as it did before.
-                      const state = liveIds.has(c.id) ? "" : stagedIds.has(c.id) ? "sched" : "exp";
-                      return (
-                        <div key={c.id} className={`cl-item ${selectedCodes.has(c.id) ? "sel" : ""}`}
-                          onClick={() => toggleSel(c.id)}>
-                          <div className="cl-check">
-                            <svg className="cl-check-ico" width="10" height="10" viewBox="0 0 10 10" fill="none">
-                              <path d="M2 5L4.2 7.5L8 3" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div className="cl-name">{c.code}</div>
-                            <div className="cl-meta">
-                              {c.monthKey ? monthLabelShort(c.monthKey) : "No drop month"}
-                              {" · "}
-                              {c.status === STATUS.TAKEN ? `Taken by ${c.takenBy || "-"} · ${formatTime(c.takenAt)}` : "Available"}
-                            </div>
-                          </div>
-                          {state && (
-                            <span className={`bdg ${state}`}>
-                              <span className="bdg-dot"></span>
-                              {state === "sched" ? "Staged" : "Old"}
-                            </span>
-                          )}
-                          <span className={`bdg ${c.status === STATUS.AVAILABLE ? "avail" : "taken"}`}>
-                            <span className="bdg-dot"></span>
-                            {c.status === STATUS.AVAILABLE ? "Free" : "Taken"}
-                          </span>
-                          <button className="btn-del" onClick={e => { e.stopPropagation(); deleteCode(c.id); }}>Delete</button>
-                        </div>
-                      );
-                    })}
+              {selectedCodes.size > 0 && (
+                <div className="bulk-bar">
+                  <div className="bulk-bar-left">
+                    <span className="bulk-sel-count">{selectedCodes.size} selected</span>
+                    <button className="btn-sel" onClick={selAll}>All</button>
+                    <button className="btn-sel" onClick={selAvail}>Free</button>
+                    <button className="btn-sel" onClick={selTaken}>Claimed</button>
+                    <button className="btn-sel" onClick={selNone}>Clear</button>
                   </div>
-                )
-              }
+                  <button className="btn-del-sel" onClick={() => setBulkDelConfirm(true)}>
+                    Delete ({selectedCodes.size})
+                  </button>
+                </div>
+              )}
+
+              <div className="tbl-wrap">
+                {mgrRows.length === 0
+                  ? <div className="tbl-empty">{codes.length === 0 ? "No codes yet." : "No matches."}</div>
+                  : (
+                    <div className="tbl-scroll">
+                      <table className="tbl">
+                        <thead>
+                          <tr>
+                            <th className="th-check">
+                              <span className={`cbx${selectedCodes.size > 0 && selectedCodes.size === codes.length ? " on" : ""}`}
+                                onClick={() => selectedCodes.size === codes.length ? selNone() : selAll()}>
+                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                                  <path d="M2 5L4.2 7.5L8 3" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </span>
+                            </th>
+                            <th>Code</th>
+                            <th>Month</th>
+                            <th>Status</th>
+                            <th>Claimed By</th>
+                            <th className="th-act">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {mgrRows.map(c => {
+                            const key = c.monthKey;
+                            const state = liveIds.has(c.id) ? "" : stagedIds.has(c.id) ? "staged" : "expired";
+                            const isTaken = c.status === STATUS.TAKEN;
+                            return (
+                              <tr key={c.id} className={selectedCodes.has(c.id) ? "sel" : ""}
+                                onClick={() => toggleSel(c.id)}>
+                                <td className="td-check">
+                                  <span className={`cbx${selectedCodes.has(c.id) ? " on" : ""}`}>
+                                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                                      <path d="M2 5L4.2 7.5L8 3" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                                  </span>
+                                </td>
+                                <td className="tbl-code">{c.code}</td>
+                                <td className="tbl-month">
+                                  {key ? monthLabelShort(key) : <span className="tbl-none">not set</span>}
+                                  {state && <> <span className={`st ${state}`}>{state === "staged" ? "Staged" : "Expired"}</span></>}
+                                </td>
+                                <td>
+                                  <span className={`st ${isTaken ? "claimed" : "free"}`}>{isTaken ? "Claimed" : "Free"}</span>
+                                </td>
+                                <td className={isTaken ? "tbl-who" : "tbl-none"}>
+                                  {isTaken ? (c.takenBy || "-") : "-"}
+                                </td>
+                                <td className="td-act">
+                                  <div className="tbl-acts">
+                                    {isTaken && (
+                                      <button className="icon-btn" title="Release back to the pool"
+                                        onClick={e => { e.stopPropagation(); setReleaseConfirm({ id: c.id, code: c.code, takenBy: c.takenBy, takenAt: c.takenAt }); }}>
+                                        <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                                          <path d="M10 11l3-3-3-3M13 8H6.5M9 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h5"
+                                            stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                                        </svg>
+                                        <span>Release</span>
+                                      </button>
+                                    )}
+                                    <button className="icon-btn danger" title="Delete this code"
+                                      onClick={e => { e.stopPropagation(); deleteCode(c.id); }}>
+                                      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                                        <path d="M2.5 4h11M6.5 7v4.5M9.5 7v4.5M3.5 4l.7 9.1a1 1 0 0 0 1 .9h5.6a1 1 0 0 0 1-.9L12.5 4M6 4V2.6a.6.6 0 0 1 .6-.6h2.8a.6.6 0 0 1 .6.6V4"
+                                          stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                                      </svg>
+                                      <span>Delete</span>
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                }
+              </div>
             </div>
 
-            {/* Activity log */}
-            <div className="mgr-section" style={{ marginBottom: 16 }}>
+            {/* ── ACTIVITY LOG ── */}
+            <div className="mgr-section">
               <div className="mgr-head"><span>Activity Log</span></div>
               {actLog.length === 0
                 ? <div className="act-empty">No activity yet.</div>
@@ -2009,10 +2202,11 @@ export default function App() {
               }
             </div>
 
-            {/* Release History */}
-            <div className="mgr-section" style={{ marginBottom: 16 }}>
+            {/* ── RELEASE HISTORY ── */}
+            <div className="mgr-section">
               <div className="mgr-head">
-                <span>Release History <span className="mgr-count">{releaseHistory.length}</span></span>
+                <span>Release History</span>
+                <span className="mgr-count">{releaseHistory.length}</span>
               </div>
               {releaseHistory.length === 0
                 ? <div className="act-empty">No releases in the past 30 days.</div>
@@ -2040,29 +2234,49 @@ export default function App() {
               }
             </div>
 
-            {/* Export CSV */}
-            <button className="btn-export-csv" onClick={exportCSV}>
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-                <path d="M8 1v9M8 10l-3-3M8 10l3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-              Export CSV
-            </button>
+            {/* ── TOOLS ── */}
+            <div className="mgr-section">
+              <div className="mgr-head"><span>Tools</span></div>
+              <button className="btn-export-csv" onClick={exportCSV}>
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 1v9M8 10l-3-3M8 10l3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+                Export CSV
+              </button>
+              <button className="btn-clear-logs" onClick={clearOldLogs}>
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                  <path d="M2 4h12M6.5 7v5M9.5 7v5M3 4l1 10a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-10M7 4V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                Clear Old Logs (30d+)
+              </button>
+            </div>
 
-            {/* Clear Old Logs */}
-            <button className="btn-clear-logs" onClick={clearOldLogs}>
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-                <path d="M2 4h12M6.5 7v5M9.5 7v5M3 4l1 10a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-10M7 4V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              Clear Old Logs (30d+)
-            </button>
-
-            <button className="btn-sec" style={{ width: "100%", padding: 11, borderRadius: "var(--r-sm)", marginTop: 8 }}
-              onClick={() => { setCodeManager(false); setSelectedCodes(new Set()); }}>
-              Close
-            </button>
           </div>
         </div>
+      )}
+
+      {/* ── BOTTOM NAV ── */}
+      {/* Admin only: staff have a single screen, so a nav would be a bar with one tab. */}
+      {isAdmin && (
+        <nav className="bottom-nav">
+          <button className={`nav-tab${managerOpen ? "" : " active"}`} onClick={closeManager}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <rect x="3" y="4" width="18" height="5" rx="1.6" stroke="currentColor" strokeWidth="1.7"/>
+              <rect x="3" y="12" width="18" height="5" rx="1.6" stroke="currentColor" strokeWidth="1.7"/>
+              <path d="M6 20h12" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+            </svg>
+            <span>Codes</span>
+          </button>
+          <button className={`nav-tab${managerOpen ? " active" : ""}`} onClick={() => setCodeManager(true)}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <ellipse cx="12" cy="6" rx="7.5" ry="3" stroke="currentColor" strokeWidth="1.7"/>
+              <path d="M4.5 6v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3V6" stroke="currentColor" strokeWidth="1.7"/>
+              <path d="M4.5 12v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6" stroke="currentColor" strokeWidth="1.7"/>
+            </svg>
+            <span>Manage</span>
+          </button>
+        </nav>
       )}
 
       {/* ── BULK DELETE CONFIRM ── */}
