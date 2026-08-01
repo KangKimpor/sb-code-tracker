@@ -97,7 +97,7 @@ await page.evaluate(() => getComputedStyle(document.querySelector(".reveal-code"
 ```
 
 The same trap applies to plain specificity ties: `.btn-copy.copied` has to come after
-`.reveal-btn.btn-sec`, because both are two-class selectors and only order separates them.
+`.take-btn.btn-sec`, because both are two-class selectors and only order separates them.
 Moving either changes which colour a copied button is.
 
 ---
