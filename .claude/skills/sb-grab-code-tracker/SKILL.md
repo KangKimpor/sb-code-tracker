@@ -275,8 +275,9 @@ More detail, plus the two CSS traps, in `references/ui-notes.md`.
 | Filter tabs | Available / Taken / All, uses `filter` as React key for animation |
 | Search | By code or staff name. Does not apply to the manager's All Codes list |
 | **Code masking** | Available codes masked for non-admins; prefix plus bullets, capped at half the string |
-| **Take flow** | Modal, name, Confirm and Reveal. `runTransaction` so only one of two simultaneous tappers wins |
-| **Reveal screen** | Code as hero: solid green block, white monospace, `.reveal-modal` for rounder card. Copy Code plus Done |
+| **Take flow** | One modal, two states. `runTransaction` so only one of two simultaneous tappers wins |
+| **Claim state** | Locked block: dashed and muted, showing the masked code, with the name field. Label reads `THIS CODE` |
+| **Reveal state** | Same block filled in: solid green, white monospace. Label reads `YOUR CODE`. Copy Code plus Done |
 | Copy to clipboard | Clipboard API with `execCommand` fallback, "Copied ✓" for 1.5s |
 | Release flow | Admin only, confirmation modal showing current holder, writes `releaseHistory` |
 | **Top-up request** | Staff tap "Tell admin we're out" when nothing is claimable. Admin sees an "N waiting" pill and a manager section |
