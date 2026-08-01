@@ -123,8 +123,8 @@ A string unique to the change is the reliable probe. **Bundle hashes are not**, 
 inlines the `VITE_*` values at build time, so a production bundle never matches a local build
 byte for byte.
 
-Good probe strings for existing features: `Tell admin we're out` (top-up), `claim-code` (the
-claim and reveal rebuild), `admin-alert` (admin alerts), `topupRequests` (the collection).
+Good probe strings for existing features: `Tell admin we're out` (top-up), `reveal-btn` (reveal
+redesign), `admin-alert` (admin alerts), `topupRequests` (the collection).
 
 For a CSS change, grep the served bundle for the declaration itself, since the stylesheet ships
 inside a JS string and keeps its whitespace:
