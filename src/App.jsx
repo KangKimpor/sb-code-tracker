@@ -502,21 +502,6 @@ const styles = `
   .m-title { font-size: 17px; font-weight: 700; color: var(--text); letter-spacing: -0.4px; margin-bottom: 3px; }
   .m-sub { font-size: 13px; color: var(--text-3); line-height: 1.4; }
 
-  /* Code display in take modal */
-  .code-chip {
-    background: var(--green-light);
-    border: 1.5px solid var(--green-mid);
-    border-radius: var(--r-lg);
-    padding: 18px 16px;
-    text-align: center;
-    font-family: var(--font-mono);
-    font-size: 22px; font-weight: 700;
-    color: var(--green-dark);
-    letter-spacing: 1.5px;
-    margin-bottom: 18px;
-    white-space: nowrap;
-  }
-
   /* Release confirm */
   .confirm-chip {
     background: var(--red-light);
@@ -805,26 +790,59 @@ const styles = `
   .btn-clear-logs:hover { background: rgba(255, 159, 64, 0.2); border-color: rgba(255, 159, 64, 0.35); }
   .btn-clear-logs:active { transform: scale(0.98); }
 
-  /* ─── CODE REVEAL (inside Take modal) ─── */
-  /* The payoff screen, and the only place a code is ever shown deliberately. The code is
-     the hero: a solid green block with white text, sized to be read at arm's length, read
-     aloud to someone else, or screenshotted and read back later.
-     Monospace is kept even though nothing else here uses it. Grab codes get typed into
-     another app, so 0 against O and 1 against I have to be tellable apart. */
-  .reveal-screen {
+  /* ─── TAKE MODAL: THE CLAIM AND REVEAL STATES ─── */
+  /* Two states of the same modal, deliberately built from the same parts so that confirming
+     reads as the code filling in rather than as a jump to a different screen. The card,
+     icon, label and buttons are shared; only the code block and the body under it change.
+     The code block keeps identical metrics in both states (same radius, font size and
+     padding) so the card does not resize on confirm. */
+  .take-modal { border-radius: 30px; padding: 30px 26px; }
+  .take-icon { font-size: 44px; line-height: 1; margin-bottom: 8px; }
+  .take-label {
+    font-size: 13px; font-weight: 700; color: var(--text-4);
+    text-transform: uppercase; letter-spacing: 2px;
+  }
+  .claim-screen, .reveal-screen {
     display: flex; flex-direction: column; align-items: center;
     padding: 6px 0 2px;
     animation: modalIn 0.26s var(--ease-spring);
   }
-  /* Only the reveal gets these. .modal is shared by every other modal in the app, so the
-     rounder corners and roomier padding are applied via a class added when revealing
-     rather than by changing the shared token. */
-  .reveal-modal { border-radius: 30px; padding: 30px 26px; }
-  .reveal-icon { font-size: 44px; line-height: 1; margin-bottom: 8px; }
-  .reveal-label {
-    font-size: 13px; font-weight: 700; color: var(--text-4);
-    text-transform: uppercase; letter-spacing: 2px;
+
+  /* CLAIM state: the same block, locked. Dashed and muted so it reads as "not yours yet".
+     It shows the masked value rather than a placeholder so you can confirm you tapped the
+     row you meant, and that mask is the one the list already shows, so nothing new leaks. */
+  .claim-code {
+    width: 100%; margin: 16px 0 14px;
+    background: var(--surface-2); color: var(--text-4);
+    border: 2px dashed var(--border-mid); border-radius: 22px;
+    padding: 20px 18px; text-align: center;
+    font-family: var(--font-mono); font-size: 33px; font-weight: 700;
+    letter-spacing: 1px; word-break: break-all;
   }
+  .claim-note {
+    font-size: 13px; color: var(--text-3); text-align: center;
+    line-height: 1.45; margin-bottom: 20px;
+  }
+  .claim-field-label {
+    display: block; text-align: center;
+    font-size: 11.5px; font-weight: 600; color: var(--text-3);
+    text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;
+  }
+  /* Sits after .f-input in the sheet, so these win on source order. The 16px is not
+     cosmetic: iOS Safari zooms the whole page when a focused input is under 16px, which on
+     this screen would shove the confirm button off the viewport mid-claim. */
+  .claim-input {
+    text-align: center; font-size: 16px;
+    padding: 14px 16px; border-radius: 14px;
+  }
+  .claim-screen .take-error { width: 100%; text-align: center; margin-top: 10px; }
+  .claim-screen .m-actions { width: 100%; margin-top: 18px; gap: 10px; }
+
+  /* REVEAL state: the payoff, and the only place a code is shown deliberately. Solid green
+     with white text, sized to be read at arm's length, read aloud to someone else, or
+     screenshotted and read back later.
+     Monospace is kept even though nothing else here uses it. Grab codes get typed into
+     another app, so 0 against O and 1 against I have to be tellable apart. */
   .reveal-code {
     width: 100%; margin: 16px 0 18px;
     background: var(--green); color: #fff;
@@ -838,21 +856,21 @@ const styles = `
   }
   .reveal-sub { font-size: 15px; color: var(--text-3); margin-bottom: 22px; }
   .reveal-sub strong { color: var(--text); font-weight: 700; }
-
-  /* Chunkier than the modal buttons elsewhere: this is a one-handed tap on a phone,
-     outdoors, and it is the last thing standing between the person and their ride. */
   .reveal-screen .m-actions { width: 100%; margin-top: 0; gap: 10px; }
-  .reveal-btn {
+
+  /* Chunkier than the modal buttons elsewhere: these are one-handed taps on a phone,
+     outdoors, and the last thing standing between the person and their ride. */
+  .take-btn {
     flex: 1; border-radius: 14px; padding: 16px 12px;
     font-size: 15.5px; font-weight: 700;
   }
-  .reveal-btn.btn-sec { background: var(--track); border-color: transparent; color: var(--text-2); }
-  .reveal-btn.btn-sec:hover { background: var(--surface-3); color: var(--text); }
-  .reveal-btn.btn-pri { box-shadow: 0 4px 14px rgba(52,199,89,0.34); }
+  .take-btn.btn-sec { background: var(--track); border-color: transparent; color: var(--text-2); }
+  .take-btn.btn-sec:hover { background: var(--surface-3); color: var(--text); }
+  .take-btn.btn-pri { box-shadow: 0 4px 14px rgba(52,199,89,0.34); }
 
   .btn-copy { flex: 1; transition: background 0.15s, color 0.15s; }
-  /* Defined after .reveal-btn.btn-sec so the confirmed state still wins on the
-     reveal screen. Equal specificity, so source order is what decides it. */
+  /* Defined after .take-btn.btn-sec so the confirmed state still wins on the reveal
+     screen. Equal specificity, so source order is what decides it. */
   .btn-copy.copied {
     background: var(--green-light); color: var(--green-dark);
     border-color: var(--green-mid);
@@ -864,10 +882,11 @@ const styles = `
      A longer code still wraps via word-break, but this keeps the everyday 8 to 12
      character codes on one line. */
   @media (max-width: 420px) {
-    .reveal-modal { border-radius: 26px; padding: 26px 20px; }
-    .reveal-icon { font-size: 38px; }
+    .take-modal { border-radius: 26px; padding: 26px 20px; }
+    .take-icon { font-size: 38px; }
+    .claim-code { font-size: 27px; padding: 17px 14px; letter-spacing: 0.5px; }
     .reveal-code { font-size: 27px; padding: 19px 14px; letter-spacing: 0.5px; }
-    .reveal-btn { padding: 15px 10px; font-size: 15px; }
+    .take-btn { padding: 15px 10px; font-size: 15px; }
   }
 
 `;
@@ -2113,37 +2132,42 @@ export default function App() {
       {/* ── TAKE MODAL ── */}
       {(takeModal || revealedCode) && (
         <div className="overlay" onClick={() => { setTakeModal(null); setStaffName(""); setRevealedCode(null); setTakeError(""); setCopied(false); }}>
-          <div className={`modal${revealedCode ? " reveal-modal" : ""}`} onClick={e => e.stopPropagation()}>
+          {/* One card for both states, so confirming fills the code in rather than
+              swapping to a differently shaped screen. */}
+          <div className="modal take-modal" onClick={e => e.stopPropagation()}>
             {revealedCode ? (
-              /* Reveal screen, shown after successful Take (Fix #11) */
+              /* Reveal state, shown only after the transaction confirms (Fix #11) */
               <div className="reveal-screen">
-                <div className="reveal-icon">🎉</div>
-                <div className="reveal-label">Your Code</div>
+                <div className="take-icon">🎉</div>
+                <div className="take-label">Your Code</div>
                 <div className="reveal-code">{revealedCode.code}</div>
                 <div className="reveal-sub">Assigned to <strong>{revealedCode.name}</strong>.</div>
                 <div className="m-actions">
                   <button
-                    className={`btn-sec reveal-btn btn-copy${copied ? " copied" : ""}`}
+                    className={`btn-sec take-btn btn-copy${copied ? " copied" : ""}`}
                     onClick={() => copyRevealedCode(revealedCode.code)}
                   >
                     {copied ? "Copied ✓" : "Copy Code"}
                   </button>
-                  <button className="btn-pri green reveal-btn"
+                  <button className="btn-pri green take-btn"
                     onClick={() => { setTakeModal(null); setRevealedCode(null); setCopied(false); }}>
                     Done
                   </button>
                 </div>
               </div>
             ) : (
-              /* Name entry form */
-              <>
-                <div className="m-head">
-                  <div className="m-title">Take Code</div>
-                  <div className="m-sub">Enter your name to claim this code.</div>
-                </div>
-                <div className="code-chip">Reveal on confirm</div>
-                <label className="f-label">Your Name</label>
-                <input className="f-input" type="text" placeholder="e.g. Kimtong, Sothea, Hongsrun…"
+              /* Claim state: same layout, code still locked */
+              <div className="claim-screen">
+                <div className="take-icon">🔒</div>
+                <div className="take-label">This Code</div>
+                {/* Masked, never the real value. This is the same mask the list already
+                    shows, so it leaks nothing: the full code is only ever rendered after
+                    the transaction has confirmed this user won it. */}
+                <div className="claim-code">{maskCode(takeModal.code)}</div>
+                <div className="claim-note">Hidden until you confirm. Claiming is final.</div>
+                <label className="claim-field-label" htmlFor="claim-name">Your Name</label>
+                <input id="claim-name" className="f-input claim-input" type="text"
+                  placeholder="e.g. Kimtong, Sothea, Hongsrun…"
                   value={staffName} onChange={e => setStaffName(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && staffName.trim() && !takeBusy && takeCode(takeModal.id, staffName.trim())}
                   disabled={takeBusy}
@@ -2152,14 +2176,14 @@ export default function App() {
                   <div className="take-error">{takeError}</div>
                 )}
                 <div className="m-actions">
-                  <button className="btn-sec" disabled={takeBusy}
+                  <button className="btn-sec take-btn" disabled={takeBusy}
                     onClick={() => { setTakeModal(null); setStaffName(""); setTakeError(""); }}>Cancel</button>
-                  <button className="btn-pri green" disabled={!staffName.trim() || takeBusy}
+                  <button className="btn-pri green take-btn" disabled={!staffName.trim() || takeBusy}
                     onClick={() => staffName.trim() && takeCode(takeModal.id, staffName.trim())}>
                     {takeBusy ? "Confirming…" : "Confirm & Reveal"}
                   </button>
                 </div>
-              </>
+              </div>
             )}
           </div>
         </div>
