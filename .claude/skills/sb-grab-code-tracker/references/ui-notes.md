@@ -97,7 +97,7 @@ await page.evaluate(() => getComputedStyle(document.querySelector(".reveal-code"
 ```
 
 The same trap applies to plain specificity ties: `.btn-copy.copied` has to come after
-`.take-btn.btn-sec`, because both are two-class selectors and only order separates them.
+`.reveal-btn.btn-sec`, because both are two-class selectors and only order separates them.
 Moving either changes which colour a copied button is.
 
 ---
@@ -136,44 +136,21 @@ Rebuilt from a supplied design. Worth knowing before changing any of it:
 
 ---
 
-## The take modal: two states of one screen
+## The reveal screen
 
-The claim step and the reveal are **the same modal element**, built from the same parts so that
-confirming reads as the code filling in rather than a jump to a different screen.
+The payoff screen, and the only place a code is shown deliberately. Rebuilt from a supplied
+mockup across two passes.
 
-| Shared | Claim only | Reveal only |
-|---|---|---|
-| `.take-modal`, `.take-icon`, `.take-label`, `.take-btn` | `.claim-screen`, `.claim-code`, `.claim-note`, `.claim-field-label`, `.claim-input` | `.reveal-screen`, `.reveal-code`, `.reveal-sub`, `.btn-copy` |
-
-**The code block keeps identical metrics in both states**, same 22px radius, 33px monospace,
-and the same total height, so the card does not resize on confirm. The claim block uses 20px
-padding plus a 2px dashed border while the reveal uses 22px padding and no border, which sums
-to the same box. Measured at 89px tall at 474px wide and 75px at 375px, identical in both
-states. **If you change one block's padding, change the other to match**, or the card will jump.
-
-- **Claim state:** dashed border, `--surface-2` fill, `--text-4` text, showing
-  `maskCode(takeModal.code)`. Dashed and muted reads as "not yours yet", and showing the mask
-  rather than a placeholder lets someone confirm they tapped the row they meant. That mask is
-  the one the list already shows, so it leaks nothing. Label reads `THIS CODE`, and the icon is
-  a padlock.
-- **Reveal state:** solid `var(--green)`, white text, soft `0 3px 10px` drop shadow. An earlier
-  version used a heavier `0 6px 20px` glow, which read as a halo and made the block look
-  detached from the card. Label reads `YOUR CODE`, and the icon is a party popper. The
-  `THIS CODE` to `YOUR CODE` progression is the point: it states the change of ownership.
-- **`.take-modal` is a separate class, not a change to `.modal`.** `.modal` is shared by the
-  PIN, release, manager and both confirm dialogs, so the rounder 30px corners and roomier
-  padding cannot go on the shared token without restyling all of them. It is applied
-  unconditionally to this modal so both states share the card.
-- **`.claim-input` is 16px for a functional reason, not a cosmetic one.** iOS Safari zooms the
-  whole page when a focused input is under 16px, which on this screen would shove the confirm
-  button off the viewport mid-claim. `.f-input` is 14px, and `.claim-input` sits after it in the
-  sheet so it wins on source order.
+- The code is the hero: a solid `var(--green)` block, white text, 33px (27px under 420px),
+  22px radius, with a soft `0 3px 10px` drop shadow. An earlier version used a heavier
+  `0 6px 20px` glow, which read as a halo and made the block look detached from the card.
+- **`.reveal-modal` is a separate class added to the modal only while revealing.** `.modal` is
+  shared by the PIN, take, release, manager and both confirm dialogs, so the rounder 30px
+  corners and roomier padding cannot go on the shared token without restyling all six.
 - **The code stays monospace,** the only monospace on the screen. Grab codes get retyped into
   the Grab app, so `0` against `O` and `1` against `I` have to be distinguishable. This is the
   one deliberate departure from the mockup, which uses a geometric sans. It is a one-line change
   if Por ever prefers exact visual fidelity.
-- The full code is **only ever rendered after the transaction confirms**. The claim state has no
-  access to it beyond the mask, which is what stops a loser in a race from seeing a code.
 - **The mockup has no "screenshot this" reminder, no expiry date, and no Grab redemption hint,
   and the implementation follows the mockup.** Dropping the reminder is only safe because a
   claimed code renders unmasked in the list, so it is recoverable by searching your own name.
