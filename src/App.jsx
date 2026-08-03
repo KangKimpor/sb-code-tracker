@@ -290,23 +290,6 @@ const styles = `
     width: 1px; background: var(--border-mid);
   }
 
-  .search-box { position: relative; width: 100%; margin-top: 10px; }
-  .search-ico {
-    position: absolute; left: 15px; top: 50%;
-    transform: translateY(-50%); color: var(--text-3);
-    pointer-events: none; display: flex;
-  }
-  .search-inp {
-    width: 100%; background: var(--track);
-    border: 1.5px solid transparent; border-radius: 14px;
-    padding: 12px 14px 12px 41px;
-    font-family: var(--font); font-size: 15px; color: var(--text);
-    outline: none; transition: background 0.16s, border-color 0.16s;
-    -webkit-appearance: none;
-  }
-  .search-inp:focus { border-color: var(--blue); background: var(--surface); }
-  .search-inp::placeholder { color: var(--text-3); }
-
   .btn-mgr {
     display: flex; align-items: center; justify-content: center; gap: 7px;
     width: 100%; margin-top: 10px;
@@ -452,7 +435,6 @@ const styles = `
     .hero-num { font-size: 25px; letter-spacing: -0.9px; }
     .hero-sub { font-size: 14px; }
     .seg { font-size: 13.5px; padding: 8px 4px; }
-    .search-inp { font-size: 14.5px; }
     .t-row { padding: 14px 15px; gap: 10px; }
     .t-code, .t-code-masked { font-size: 17px; letter-spacing: 0.8px; }
     .btn-take { padding: 10px 20px; font-size: 14.5px; }
@@ -504,14 +486,14 @@ const styles = `
 
   /* Code display in take modal */
   .code-chip {
-    background: var(--green-light);
-    border: 1.5px solid var(--green-mid);
+    background: var(--green);
+    border: 1.5px solid var(--green);
     border-radius: var(--r-lg);
     padding: 18px 16px;
     text-align: center;
     font-family: var(--font-mono);
     font-size: 22px; font-weight: 700;
-    color: var(--green-dark);
+    color: #fff;
     letter-spacing: 1.5px;
     margin-bottom: 18px;
     white-space: nowrap;
@@ -1093,7 +1075,6 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [connError, setConnError] = useState(false);
   const [filter, setFilter] = useState("available");
-  const [search, setSearch] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [optimistic, setOptimistic] = useState({});
 
@@ -1780,8 +1761,8 @@ export default function App() {
   const liveIds = new Set(liveCodes.map(c => c.id));
   const stagedIds = new Set(stagedCodes.map(c => c.id));
 
-  // Current month plus the next three, so a drop can be staged well before month end.
-  const monthOptions = [0, 1, 2, 3].map(n => shiftMonthKey(nowMonth, n));
+  // Current month plus next month only. Codes are never staged further ahead than that.
+  const monthOptions = [0, 1].map(n => shiftMonthKey(nowMonth, n));
 
   // Merge optimistic
   const merged = liveCodes.map(c => optimistic[c.id] ? { ...c, ...optimistic[c.id], _opt: true } : c);
@@ -1793,10 +1774,6 @@ export default function App() {
   const filtered = sorted.filter(c => {
     if (filter === "available" && c.status !== STATUS.AVAILABLE) return false;
     if (filter === "taken" && c.status !== STATUS.TAKEN) return false;
-    if (search) {
-      const q = search.toUpperCase();
-      if (!c.code.includes(q) && !(c.takenBy || "").toUpperCase().includes(q)) return false;
-    }
     return true;
   });
 
@@ -1890,7 +1867,7 @@ export default function App() {
   // when 40 codes are sitting ready for next month reads as a bug.
   let emptyIcon = "🔍";
   let emptyTitle = "No results";
-  let emptySub = "Try changing your filter or search";
+  let emptySub = "Try changing your filter";
   if (liveCodes.length === 0) {
     emptyIcon = "📅";
     emptyTitle = `No codes for ${monthLabel(nowMonth)}`;
@@ -1904,7 +1881,7 @@ export default function App() {
     } else {
       emptySub = isAdmin ? "Add codes via Manage Codes" : "Ask an admin to add this month's codes";
     }
-  } else if (!search && filter === "available") {
+  } else if (filter === "available") {
     emptyIcon = "✓";
     emptyTitle = "All codes taken";
     emptySub = "Every code for this month has been claimed";
@@ -1990,15 +1967,15 @@ export default function App() {
           {/* ── AVAILABILITY ── */}
           <div className="hero">
             <div className={`hero-num${avail === 0 ? " none" : ""}`}>
-              {total === 0 ? `No codes for ${monthLabel(nowMonth)}` : `${avail} of ${total} available`}
+              {total === 0 ? `No codes for ${monthLabel(nowMonth)}` : `${avail} of ${total} code${total === 1 ? "" : "s"} available`}
             </div>
-            <div className={`hero-sub${total > 0 && expiry.urgent ? " urgent" : ""}`}>
-              {total === 0
-                ? (stagedDrops.length
-                    ? `${stagedDrops[0][1].length} ready for ${monthLabel(stagedDrops[0][0])}`
-                    : "Waiting for this month's codes")
-                : expiry.text}
-            </div>
+            {total === 0 && (
+              <div className="hero-sub">
+                {stagedDrops.length
+                  ? `${stagedDrops[0][1].length} ready for ${monthLabel(stagedDrops[0][0])}`
+                  : "Waiting for this month's codes"}
+              </div>
+            )}
             {canRequestTopup && (
               <button
                 className={`btn-topup${requestSent ? " sent" : ""}`}
@@ -2019,15 +1996,6 @@ export default function App() {
               {[{ k: "available", l: "Available" }, { k: "taken", l: "Taken" }, { k: "all", l: "All" }].map(f => (
                 <button key={f.k} className={`seg ${filter === f.k ? "active" : ""}`} onClick={() => { setFilter(f.k); }}>{f.l}</button>
               ))}
-            </div>
-            <div className="search-box">
-              <span className="search-ico">
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-                  <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.5"/>
-                  <path d="M11 11L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-              </span>
-              <input className="search-inp" type="text" placeholder="Search code or name…" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             {isAdmin && (
               <button className="btn-mgr" onClick={() => setCodeManager(true)}>
