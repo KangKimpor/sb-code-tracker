@@ -109,6 +109,11 @@ const styles = `
     --font-mono: ui-monospace, 'SF Mono', 'Fira Code', monospace;
     --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
     --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    /* Opaque recessed fill for form controls sitting inside a .mgr-list group, so the
+       Code Manager redesign never falls back to the translucent --surface-2/-3 grays.
+       Scoped to .mgr-list rather than replacing --surface-2 globally, since --surface-2
+       is still load-bearing for the other five modals this task does not touch. */
+    --surface-recessed: #f2f2f5;
   }
 
   body {
@@ -527,6 +532,11 @@ const styles = `
   }
   .f-input:focus { border-color: var(--blue); background: var(--surface); box-shadow: 0 0 0 3px var(--blue-light); }
   .f-input::placeholder { color: var(--text-4); }
+  /* Opaque inside the Code Manager's grouped rows. More specific than the base rule
+     above so it wins regardless of source order; kept as an addition rather than
+     touching .f-input itself, which the PIN and take/release modals also share. */
+  .mgr-list .f-input { background: var(--surface-recessed); border-color: var(--border); }
+  .mgr-list .f-input:focus { background: var(--surface); }
 
   /* Drop-month picker. Matches .f-input, but a native select ignores most of it until
      appearance is reset, which also removes the platform caret, hence the inline SVG.
@@ -543,6 +553,8 @@ const styles = `
     background-repeat: no-repeat; background-position: right 13px center;
   }
   .f-select:focus { border-color: var(--blue); background-color: var(--surface); box-shadow: 0 0 0 3px var(--blue-light); }
+  .mgr-list .f-select { background-color: var(--surface-recessed); border-color: var(--border); }
+  .mgr-list .f-select:focus { background-color: var(--surface); }
 
   .pin-inp {
     width: 100%; background: var(--surface-2);
@@ -592,52 +604,136 @@ const styles = `
   .btn-pri.red { background: var(--red); box-shadow: 0 1px 4px rgba(255,59,48,0.22); }
   .btn-pri.red:hover:not(:disabled) { background: #e0352a; }
 
-  /* ─── CODE MANAGER ─── */
-  .mgr-section { margin-bottom: 22px; }
-  .mgr-head {
+  /* ─── CODE MANAGER: grouped iOS-style list ─── */
+  /* Apple settings pattern: a small uppercase label sits above a group, the group itself
+     is one opaque surface with hairline dividers between rows and no border around it.
+     .mgr-label names the single group directly beneath it (Drop Month, Add Codes, Code
+     Inventory, History), the same way iOS Settings labels one setting or one cluster of
+     rows immediately below, never a bucket spanning unrelated groups. */
+  .mgr-label {
+    font-size: 12px; font-weight: 600; color: var(--text-4);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin: 20px 4px 6px;
+  }
+  .mgr-label:first-of-type { margin-top: 4px; }
+
+  .mgr-list {
+    background: var(--surface); border-radius: var(--r-lg);
+    box-shadow: var(--sh-sm); overflow: hidden;
+    margin-bottom: 4px;
+  }
+  /* Two groups back to back with no .mgr-label between them (a labeled group followed by
+     a conditional alert group, e.g. Drop Month then Scheduled Drops) still need daylight
+     between them so they don't read as one merged list. */
+  .mgr-list + .mgr-list { margin-top: 14px; }
+
+  /* A static (non-navigating) row holding real content: a picker, an inline add form, a
+     scheduled-drop entry. Padding only, no divider styling of its own; dividers come from
+     sibling rows via the +.mgr-row-static / +.mgr-row rule below. */
+  .mgr-row-static { padding: 14px 16px; }
+  .mgr-row-static + .mgr-row-static,
+  .mgr-list > .mgr-row-static + .mgr-row {
+    border-top: 1px solid var(--border);
+  }
+
+  /* A clickable row that pushes a sub-screen, iOS list-row style: label left, trailing
+     content (a count, a chevron, or both) right, full-width tap target. */
+  .mgr-row {
     display: flex; align-items: center; justify-content: space-between;
-    font-size: 11px; font-weight: 600; color: var(--text-4);
-    text-transform: uppercase; letter-spacing: 0.7px;
-    padding-bottom: 8px; border-bottom: 1px solid var(--border);
-    margin-bottom: 12px;
+    width: 100%; background: none; border: none;
+    padding: 14px 16px; cursor: pointer; text-align: left;
+    font-family: var(--font); -webkit-tap-highlight-color: transparent;
+    transition: background 0.12s;
   }
-  .mgr-count {
-    background: var(--surface-2); border-radius: 20px;
-    padding: 1px 8px; font-size: 11px; color: var(--text-3);
-    font-weight: 600;
+  .mgr-row:hover { background: var(--bg); }
+  .mgr-row:active { background: var(--track); }
+  .mgr-row + .mgr-row { border-top: 1px solid var(--border); }
+  .mgr-row-title { font-size: 14.5px; font-weight: 500; color: var(--text); }
+  .mgr-row-trail {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13.5px; color: var(--text-4);
   }
-  .mgr-row { display: flex; gap: 8px; }
-  .mgr-row .f-input { flex: 1; }
+  .mgr-chevron { display: flex; color: var(--text-4); flex-shrink: 0; }
+
+  /* Inline add form, sits inside a .mgr-row-static rather than the modal padding directly
+     so it lines up with the rest of the group. */
+  .mgr-inline-add { display: flex; gap: 8px; }
+  .mgr-inline-add .f-input { flex: 1; }
+
+  /* Back row for a pushed sub-screen. Sits where the modal padding would otherwise start,
+     so the whole sub-screen still opens with the same top inset as the root list. */
+  .mgr-back {
+    display: flex; align-items: center; gap: 6px;
+    background: none; border: none; color: var(--blue);
+    font-family: var(--font); font-size: 15px; font-weight: 500;
+    padding: 0 0 16px; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .mgr-back:hover { opacity: 0.7; }
+
+  /* Advisory rows: Top-up Requests, Expired Codes, No Drop Month. Same opaque .mgr-list
+     shell as everything else, tinted only on the icon and title so the group still reads
+     as one native list rather than a boxed alert panel. */
+  .mgr-alert-row {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 14px 16px;
+  }
+  .mgr-alert-ico {
+    width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700; color: #fff; line-height: 1;
+    background: var(--orange);
+  }
+  .mgr-alert-ico.muted { background: var(--text-4); }
+  .mgr-alert-main { flex: 1; min-width: 160px; }
+  .mgr-alert-title { font-size: 13.5px; font-weight: 600; color: var(--orange-dark); }
+  .mgr-alert-title.muted { color: var(--text-2); }
+  .mgr-alert-sub { font-size: 12px; color: var(--text-4); line-height: 1.45; margin-top: 2px; }
+  .mgr-alert-btn {
+    background: var(--bg); border: 1px solid var(--border-mid);
+    border-radius: var(--r-xs); font-family: var(--font);
+    font-size: 12px; font-weight: 600; color: var(--text-2);
+    padding: 6px 13px; cursor: pointer; transition: all 0.15s;
+    flex-shrink: 0; white-space: nowrap;
+  }
+  .mgr-alert-btn:hover { background: var(--track); }
 
   /* Drop scheduling */
-  .drop-note { font-size: 11.5px; color: var(--text-4); margin-top: 8px; line-height: 1.45; }
+  .drop-note { font-size: 12px; color: var(--text-4); margin-top: 8px; line-height: 1.45; }
   .drop-note.sched { color: #8e34c4; font-weight: 500; }
 
-  .sched-list { border: 1px solid var(--border); border-radius: var(--r-sm); }
-  .sched-item {
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 12px; border-bottom: 1px solid rgba(60,60,67,0.06);
-  }
-  .sched-item:last-child { border-bottom: none; }
-  .sched-main { flex: 1; min-width: 0; }
-  .sched-month { font-size: 13px; font-weight: 600; color: var(--text); }
-  .sched-meta { font-size: 11px; color: var(--text-4); }
+  .sched-month { font-size: 13.5px; font-weight: 600; color: var(--text); }
+  .sched-meta { font-size: 11.5px; color: var(--text-4); }
 
-  .exp-box {
-    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    padding: 10px 12px; border-radius: var(--r-sm);
-    background: var(--surface-2); border: 1px solid var(--border-mid);
+  /* Segmented control, native iOS look: a track with a plain-text active state rather
+     than a sliding thumb, since the modal shell has no room for the extra layout work
+     a thumb needs to stay correct across three widths at every viewport. */
+  .seg-ctrl {
+    display: flex; background: var(--track); border-radius: var(--r-sm);
+    padding: 3px; gap: 3px; margin-bottom: 12px;
   }
-  .exp-main { flex: 1; min-width: 140px; }
-  .exp-title { font-size: 13px; font-weight: 600; color: var(--text-2); }
-  .exp-meta { font-size: 11px; color: var(--text-4); line-height: 1.45; }
-  .btn-exp-clear {
-    background: none; border: 1px solid var(--border-mid);
-    border-radius: 6px; font-family: var(--font); font-size: 11.5px; font-weight: 600;
-    color: var(--text-3); padding: 5px 12px; cursor: pointer;
-    transition: all 0.15s; flex-shrink: 0; white-space: nowrap;
+  .seg-ctrl button {
+    flex: 1; background: none; border: none; border-radius: 7px;
+    font-family: var(--font); font-size: 13px; font-weight: 500;
+    color: var(--text-3); padding: 7px 4px; cursor: pointer;
+    transition: all 0.15s; -webkit-tap-highlight-color: transparent;
   }
-  .btn-exp-clear:hover { border-color: var(--red-mid); color: var(--red); background: var(--red-light); }
+  .seg-ctrl button.active {
+    background: var(--surface); color: var(--text);
+    font-weight: 600; box-shadow: var(--sh-sm);
+  }
+
+  /* Narrow phones. Lives here rather than the SMALL PHONES block near the top of the
+     sheet: that block sits above every rule these override, and a media query adds no
+     specificity, so an override placed before the rule it targets loses on source order
+     and does nothing. Same trap documented for .reveal-code. */
+  @media (max-width: 420px) {
+    .mgr-label { font-size: 11.5px; margin: 18px 2px 6px; }
+    .mgr-row-static, .mgr-row, .mgr-alert-row { padding: 12px 14px; }
+    .mgr-row-title { font-size: 14px; }
+    .mgr-alert-sub { font-size: 11.5px; }
+    .mgr-back { font-size: 14.5px; }
+    .seg-ctrl button { font-size: 12.5px; padding: 7px 2px; }
+  }
 
   .btn-add {
     background: var(--text); color: #fff; border: none;
@@ -650,8 +746,8 @@ const styles = `
   .btn-add:active { transform: scale(0.97); }
 
   .bulk-ta {
-    width: 100%; background: var(--surface-2);
-    border: 1.5px solid var(--border-mid);
+    width: 100%; background: var(--surface-recessed);
+    border: 1.5px solid var(--border);
     border-radius: var(--r-sm); padding: 10px 14px;
     font-family: var(--font-mono); font-size: 12.5px;
     color: var(--text); outline: none; resize: vertical;
@@ -686,7 +782,7 @@ const styles = `
     user-select: none; -webkit-user-select: none;
   }
   .cl-item:last-child { border-bottom: none; }
-  .cl-item:hover { background: var(--surface-2); }
+  .cl-item:hover { background: var(--bg); }
   .cl-item.sel { background: var(--blue-light); }
 
   .cl-check {
@@ -740,6 +836,10 @@ const styles = `
 
   /* Activity log */
   .act-log { max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--r-sm); }
+  /* Dedicated sub-screen gives Activity Log / Release History the whole modal, so the
+     list can run taller than the 180px it got as one section among many on the root
+     list. */
+  .act-log.tall { max-height: 420px; }
   .act-log::-webkit-scrollbar { width: 4px; }
   .act-log::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 4px; }
   .act-item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; border-bottom: 1px solid rgba(60,60,67,0.06); animation: rowIn 0.18s ease; }
@@ -772,6 +872,7 @@ const styles = `
     border-radius: var(--r-sm); font-family: var(--font);
     font-size: 13px; font-weight: 600; color: var(--green-dark);
     padding: 10px; cursor: pointer; transition: all 0.15s;
+    margin-top: 20px;
   }
   .btn-export-csv:hover { background: var(--green-mid); }
   .btn-export-csv:active { transform: scale(0.98); }
@@ -1089,12 +1190,20 @@ export default function App() {
 
   const [releaseConfirm, setReleaseConfirm] = useState(null);
   const [codeManager, setCodeManager] = useState(false);
+  // Which sub-screen of Code Manager is pushed on top of the root list, iOS-settings
+  // style. null means the root list. Reset to null whenever Code Manager closes so it
+  // never reopens mid-drill-in.
+  const [mgrScreen, setMgrScreen] = useState(null);
 
   // Manager state
   const [newCode, setNewCode] = useState("");
   const [bulkText, setBulkText] = useState("");
   const [selectedCodes, setSelectedCodes] = useState(new Set());
   const [bulkDelConfirm, setBulkDelConfirm] = useState(false);
+  // Display-only filter for the All Codes sub-screen's segmented control. Separate from
+  // selectedCodes: it narrows what is shown, selection (selAll/selAvail/selTaken/selNone)
+  // is unchanged and still operates on the full list regardless of this filter.
+  const [mgrCodeFilter, setMgrCodeFilter] = useState("all");
 
   // ── Month scoping ──
   // The month whose codes are currently live. Held in state rather than read inline so
@@ -1187,14 +1296,20 @@ export default function App() {
       if (e.key !== "Escape") return;
       if (dropDelConfirm) setDropDelConfirm(null);
       else if (bulkDelConfirm) setBulkDelConfirm(false);
-      else if (codeManager) { setCodeManager(false); setSelectedCodes(new Set()); }
+      else if (codeManager) {
+        // Same slot in the priority order as before. Native iOS behaviour: Escape backs
+        // out of a pushed sub-screen first, and only closes the whole modal once back at
+        // the root list. The open/close contract for Code Manager itself is unchanged.
+        if (mgrScreen) setMgrScreen(null);
+        else { setCodeManager(false); setSelectedCodes(new Set()); }
+      }
       else if (releaseConfirm) setReleaseConfirm(null);
       else if (takeModal) { setTakeModal(null); setStaffName(""); setRevealedCode(null); setTakeError(""); setCopied(false); }
       else if (pinModal) { setPinModal(false); setPin(""); setPinError(""); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dropDelConfirm, bulkDelConfirm, codeManager, releaseConfirm, takeModal, pinModal]);
+  }, [dropDelConfirm, bulkDelConfirm, codeManager, mgrScreen, releaseConfirm, takeModal, pinModal]);
 
   // Firebase real-time listener: codes (always on)
   useEffect(() => {
@@ -2158,244 +2273,359 @@ export default function App() {
 
       {/* ── CODE MANAGER ── */}
       {codeManager && isAdmin && (
-        <div className="overlay" onClick={() => { setCodeManager(false); setSelectedCodes(new Set()); }}>
+        <div className="overlay" onClick={() => { setCodeManager(false); setSelectedCodes(new Set()); setMgrScreen(null); }}>
           <div className="modal wide" onClick={e => e.stopPropagation()}>
-            <div className="m-head">
-              <div className="m-title">Code Manager</div>
-              <div className="m-sub">Add, schedule, review, and remove codes.</div>
-            </div>
 
-            {/* Staff waiting on codes. First section, above the add forms, because it is
-                the reason the manager is open at all when it appears. Absent entirely
-                when nobody is waiting, so the everyday layout is unchanged. */}
-            {monthRequests.length > 0 && (
-              <div className="mgr-section">
-                <div className="mgr-head">
-                  <span>Top-up Requests <span className="mgr-count">{waitingCount}</span></span>
+            {/* ── ROOT LIST ── */}
+            {!mgrScreen && (
+              <>
+                <div className="m-head">
+                  <div className="m-title">Code Manager</div>
+                  <div className="m-sub">Add, schedule, review, and remove codes.</div>
                 </div>
-                <div className="exp-box">
-                  <div className="exp-main">
-                    <div className="exp-title">
-                      {waitingCount === 1
-                        ? "1 person is waiting for a code"
-                        : `${waitingCount} people are waiting for a code`}
-                    </div>
-                    <div className="exp-meta">
-                      {`Last asked ${formatTimeShort(monthRequests[0].ts)}. `}
-                      {`Add codes for ${monthLabel(nowMonth)} below to top up the pool, then clear this.`}
-                    </div>
-                  </div>
-                  <button className="btn-exp-clear" onClick={clearTopupRequests}>Clear</button>
-                </div>
-              </div>
-            )}
 
-            {/* Drop month, applies to both add forms below */}
-            <div className="mgr-section">
-              <div className="mgr-head">
-                <span>Drop Month</span>
-                {dropMonth !== nowMonth && <span className="mgr-count">scheduled</span>}
-              </div>
-              <select className="f-select" value={dropMonth} onChange={e => setDropMonth(e.target.value)}>
-                {monthOptions.map(key => (
-                  <option key={key} value={key}>
-                    {monthLabel(key)}{key === nowMonth ? " (live now)" : ""}
-                  </option>
-                ))}
-              </select>
-              <div className={`drop-note${dropMonth === nowMonth ? "" : " sched"}`}>
-                {dropMonth === nowMonth
-                  ? "Codes added below go live straight away, alongside the ones already there. Safe to top up as often as you need."
-                  : `Codes added below stay hidden from staff until 1 ${monthLabel(dropMonth)}. When that month starts they take over, and this month's codes are removed automatically.`}
-              </div>
-            </div>
-
-            {/* Single add */}
-            <div className="mgr-section">
-              <div className="mgr-head"><span>Add Single Code</span></div>
-              <div className="mgr-row">
-                <input className="f-input" type="text" placeholder="e.g. SB-001"
-                  value={newCode} onChange={e => setNewCode(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && addCode()} />
-                <button className="btn-add" onClick={addCode}>Add</button>
-              </div>
-            </div>
-
-            {/* Bulk add */}
-            <div className="mgr-section">
-              <div className="mgr-head"><span>Bulk Add</span></div>
-              <textarea className="bulk-ta" placeholder={"SB-001\nSB-002\nSB-003"}
-                value={bulkText} onChange={e => setBulkText(e.target.value)} />
-              <div className="bulk-hint">One code per line or comma-separated. Duplicates skipped.</div>
-              <button className="btn-bulk" disabled={!bulkText.trim()} onClick={addBulk}>Add All Codes</button>
-            </div>
-
-            {/* Scheduled drops */}
-            {stagedDrops.length > 0 && (
-              <div className="mgr-section">
-                <div className="mgr-head">
-                  <span>Scheduled Drops <span className="mgr-count">{stagedCodes.length}</span></span>
-                </div>
-                <div className="sched-list">
-                  {stagedDrops.map(([key, list]) => (
-                    <div key={key} className="sched-item">
-                      <span className="bdg sched"><span className="bdg-dot"></span>Staged</span>
-                      <div className="sched-main">
-                        <div className="sched-month">{monthLabel(key)}</div>
-                        <div className="sched-meta">
-                          {`${list.length} code(s) · goes live 1 ${monthLabel(key)}, replacing this month's`}
+                {/* Staff waiting on codes. First row, above everything else, because it is
+                    the reason the manager is open at all when it appears. Absent entirely
+                    when nobody is waiting, so the everyday layout is unchanged. */}
+                {monthRequests.length > 0 && (
+                  <div className="mgr-list">
+                    <div className="mgr-alert-row">
+                      <div className="mgr-alert-ico">!</div>
+                      <div className="mgr-alert-main">
+                        <div className="mgr-alert-title">
+                          {waitingCount === 1
+                            ? "1 person is waiting for a code"
+                            : `${waitingCount} people are waiting for a code`}
+                        </div>
+                        <div className="mgr-alert-sub">
+                          {`Last asked ${formatTimeShort(monthRequests[0].ts)}. `}
+                          {`Add codes for ${monthLabel(nowMonth)} below, then clear this.`}
                         </div>
                       </div>
-                      <button className="btn-del"
-                        onClick={() => setDropDelConfirm({ monthKey: key, ids: list.map(c => c.id) })}>
-                        Delete
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Expired codes awaiting cleanup */}
-            {staleCodes.length > 0 && (
-              <div className="mgr-section">
-                <div className="mgr-head">
-                  <span>Expired Codes <span className="mgr-count">{staleCodes.length}</span></span>
-                </div>
-                <div className="exp-box">
-                  <div className="exp-main">
-                    <div className="exp-title">{describeDrops(staleCodes)}</div>
-                    <div className="exp-meta">
-                      {"Their month has passed, so they are already hidden from staff. "}
-                      {liveCodes.length === 0
-                        ? "They are removed automatically as soon as this month has codes."
-                        : "Cleanup runs automatically. Use this if it hasn't caught up."}
+                      <button className="mgr-alert-btn" onClick={clearTopupRequests}>Clear</button>
                     </div>
                   </div>
-                  <button className="btn-exp-clear" onClick={clearStale}>Clear Now</button>
-                </div>
-              </div>
-            )}
+                )}
 
-            {/* Codes from before drop scheduling existed. Nothing can date them, so they
-                stay live until admin says which month they belong to. */}
-            {unlabelledCodes.length > 0 && (
-              <div className="mgr-section">
-                <div className="mgr-head">
-                  <span>No Drop Month <span className="mgr-count">{unlabelledCodes.length}</span></span>
-                </div>
-                <div className="exp-box">
-                  <div className="exp-main">
-                    <div className="exp-title">{unlabelledCodes.length} code(s) added before scheduling existed</div>
-                    <div className="exp-meta">
-                      {"Treated as live, and never removed automatically, because there is no record " +
-                       "of which month they belong to. If these are this month's codes, assign them " +
-                       "so they get cleaned up on their own. If they are leftovers, remove them."}
+                {/* Drop month, applies to both add forms below */}
+                <div className="mgr-label">Drop Month</div>
+                <div className="mgr-list">
+                  <div className="mgr-row-static">
+                    <select className="f-select" value={dropMonth} onChange={e => setDropMonth(e.target.value)}>
+                      {monthOptions.map(key => (
+                        <option key={key} value={key}>
+                          {monthLabel(key)}{key === nowMonth ? " (live now)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <div className={`drop-note${dropMonth === nowMonth ? "" : " sched"}`}>
+                      {dropMonth === nowMonth
+                        ? "Codes added below go live straight away, alongside the ones already there."
+                        : `Codes added below stay hidden until 1 ${monthLabel(dropMonth)}, when they take over and this month's codes are removed automatically.`}
                     </div>
                   </div>
-                  <button className="btn-exp-clear" onClick={labelUnlabelled}>
-                    Assign to {monthLabelShort(nowMonth)}
-                  </button>
-                  <button className="btn-exp-clear" onClick={removeUnlabelled}>Remove</button>
                 </div>
-              </div>
-            )}
 
-            {/* Code list */}
-            <div className="mgr-section">
-              <div className="mgr-head">
-                <span>All Codes <span className="mgr-count">{codes.length}</span></span>
-              </div>
-
-              {/* Bulk action bar */}
-              <div className="bulk-bar">
-                <div className="bulk-bar-left">
-                  <span className="bulk-sel-count">{selectedCodes.size} selected</span>
-                  <button className="btn-sel" onClick={selAll}>All</button>
-                  <button className="btn-sel" onClick={selAvail}>Available</button>
-                  <button className="btn-sel" onClick={selTaken}>Taken</button>
-                  <button className="btn-sel" onClick={selNone}>Clear</button>
-                </div>
-                <button className="btn-del-sel" disabled={selectedCodes.size === 0}
-                  onClick={() => setBulkDelConfirm(true)}>
-                  Delete ({selectedCodes.size})
-                </button>
-              </div>
-
-              {codes.length === 0
-                ? <div className="list-empty">No codes yet.</div>
-                : (
-                  <div className="code-list">
-                    {managerCodes.map(c => {
-                      // Bucket comes from the partition rather than comparing months here,
-                      // so unlabelled codes are classified the same way everywhere.
-                      // Only non-live codes get the extra chip, so the everyday case looks
-                      // exactly as it did before.
-                      const state = liveIds.has(c.id) ? "" : stagedIds.has(c.id) ? "sched" : "exp";
-                      return (
-                        <div key={c.id} className={`cl-item ${selectedCodes.has(c.id) ? "sel" : ""}`}
-                          onClick={() => toggleSel(c.id)}>
-                          <div className="cl-check">
-                            <svg className="cl-check-ico" width="10" height="10" viewBox="0 0 10 10" fill="none">
-                              <path d="M2 5L4.2 7.5L8 3" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
-                          </div>
+                {/* Scheduled drops, one row per staged month, still conditional */}
+                {stagedDrops.length > 0 && (
+                  <div className="mgr-list">
+                    {stagedDrops.map(([key, list]) => (
+                      <div key={key} className="mgr-row-static">
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <span className="bdg sched"><span className="bdg-dot"></span>Staged</span>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div className="cl-name">{c.code}</div>
-                            <div className="cl-meta">
-                              {c.monthKey ? monthLabelShort(c.monthKey) : "No drop month"}
-                              {" · "}
-                              {c.status === STATUS.TAKEN ? `Taken by ${c.takenBy || "-"} · ${formatTime(c.takenAt)}` : "Available"}
+                            <div className="sched-month">{monthLabel(key)}</div>
+                            <div className="sched-meta">
+                              {`${list.length} code(s) · goes live 1 ${monthLabel(key)}`}
                             </div>
                           </div>
-                          {state && (
-                            <span className={`bdg ${state}`}>
-                              <span className="bdg-dot"></span>
-                              {state === "sched" ? "Staged" : "Old"}
-                            </span>
-                          )}
-                          <span className={`bdg ${c.status === STATUS.AVAILABLE ? "avail" : "taken"}`}>
-                            <span className="bdg-dot"></span>
-                            {c.status === STATUS.AVAILABLE ? "Free" : "Taken"}
-                          </span>
-                          <button className="btn-del" onClick={e => { e.stopPropagation(); deleteCode(c.id); }}>Delete</button>
+                          <button className="btn-del"
+                            onClick={() => setDropDelConfirm({ monthKey: key, ids: list.map(c => c.id) })}>
+                            Delete
+                          </button>
                         </div>
-                      );
-                    })}
-                  </div>
-                )
-              }
-            </div>
-
-            {/* Activity log */}
-            <div className="mgr-section" style={{ marginBottom: 16 }}>
-              <div className="mgr-head"><span>Activity Log</span></div>
-              {actLog.length === 0
-                ? <div className="act-empty">No activity yet.</div>
-                : (
-                  <div className="act-log">
-                    {actLog.map(a => (
-                      <div key={a.id} className="act-item">
-                        <span className={`act-dot ${a.type}`}></span>
-                        <span className="act-text">{a.text}</span>
-                        <span className="act-time">{formatTimeShort(a.ts)}</span>
                       </div>
                     ))}
                   </div>
-                )
-              }
-            </div>
+                )}
 
-            {/* Release History */}
-            <div className="mgr-section" style={{ marginBottom: 16 }}>
-              <div className="mgr-head">
-                <span>Release History <span className="mgr-count">{releaseHistory.length}</span></span>
-              </div>
-              {releaseHistory.length === 0
-                ? <div className="act-empty">No releases in the past 30 days.</div>
-                : (
-                  <div className="act-log">
-                    {releaseHistory.map(r => {
+                {/* Add codes */}
+                <div className="mgr-label">Add Codes</div>
+                <div className="mgr-list">
+                  <div className="mgr-row-static">
+                    <div className="mgr-inline-add">
+                      <input className="f-input" type="text" placeholder="e.g. SB-001"
+                        value={newCode} onChange={e => setNewCode(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && addCode()} />
+                      <button className="btn-add" onClick={addCode}>Add</button>
+                    </div>
+                  </div>
+                  <button className="mgr-row" onClick={() => setMgrScreen("bulk")}>
+                    <span className="mgr-row-title">Bulk Add Codes</span>
+                    <span className="mgr-chevron">
+                      <svg width="8" height="13" viewBox="0 0 8 13" fill="none">
+                        <path d="M1 1l5.5 5.5L1 12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </span>
+                  </button>
+                </div>
+
+                {/* Expired codes awaiting cleanup */}
+                {staleCodes.length > 0 && (
+                  <div className="mgr-list">
+                    <div className="mgr-alert-row muted">
+                      <div className="mgr-alert-ico muted">i</div>
+                      <div className="mgr-alert-main">
+                        <div className="mgr-alert-title muted">{describeDrops(staleCodes)}</div>
+                        <div className="mgr-alert-sub">
+                          {"Hidden from staff already. "}
+                          {liveCodes.length === 0
+                            ? "Removed automatically once this month has codes."
+                            : "Cleanup runs automatically. Use this if it hasn't caught up."}
+                        </div>
+                      </div>
+                      <button className="mgr-alert-btn" onClick={clearStale}>Clear Now</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Codes from before drop scheduling existed */}
+                {unlabelledCodes.length > 0 && (
+                  <div className="mgr-list">
+                    <div className="mgr-alert-row muted">
+                      <div className="mgr-alert-ico muted">?</div>
+                      <div className="mgr-alert-main">
+                        <div className="mgr-alert-title muted">{unlabelledCodes.length} code(s) with no drop month</div>
+                        <div className="mgr-alert-sub">
+                          {"Treated as live and never auto-removed. Assign if these are this month's, or remove if leftovers."}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                        <button className="mgr-alert-btn" onClick={labelUnlabelled}>
+                          Assign to {monthLabelShort(nowMonth)}
+                        </button>
+                        <button className="mgr-alert-btn" onClick={removeUnlabelled}>Remove</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Code inventory summary, drills into the full list */}
+                <div className="mgr-label">Code Inventory</div>
+                <div className="mgr-list">
+                  <button className="mgr-row" onClick={() => setMgrScreen("codes")}>
+                    <span className="mgr-row-title">All Codes</span>
+                    <span className="mgr-row-trail">
+                      {codes.length}
+                      <span className="mgr-chevron">
+                        <svg width="8" height="13" viewBox="0 0 8 13" fill="none">
+                          <path d="M1 1l5.5 5.5L1 12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </span>
+                    </span>
+                  </button>
+                </div>
+
+                {/* History */}
+                <div className="mgr-label">History</div>
+                <div className="mgr-list">
+                  <button className="mgr-row" onClick={() => setMgrScreen("activity")}>
+                    <span className="mgr-row-title">Activity Log</span>
+                    <span className="mgr-row-trail">
+                      {actLog.length}
+                      <span className="mgr-chevron">
+                        <svg width="8" height="13" viewBox="0 0 8 13" fill="none">
+                          <path d="M1 1l5.5 5.5L1 12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </span>
+                    </span>
+                  </button>
+                  <button className="mgr-row" onClick={() => setMgrScreen("history")}>
+                    <span className="mgr-row-title">Release History</span>
+                    <span className="mgr-row-trail">
+                      {releaseHistory.length}
+                      <span className="mgr-chevron">
+                        <svg width="8" height="13" viewBox="0 0 8 13" fill="none">
+                          <path d="M1 1l5.5 5.5L1 12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </span>
+                    </span>
+                  </button>
+                </div>
+
+                {/* Export CSV */}
+                <button className="btn-export-csv" onClick={exportCSV}>
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                    <path d="M8 1v9M8 10l-3-3M8 10l3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                  Export CSV
+                </button>
+
+                {/* Clear Old Logs */}
+                <button className="btn-clear-logs" onClick={clearOldLogs}>
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                    <path d="M2 4h12M6.5 7v5M9.5 7v5M3 4l1 10a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-10M7 4V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  Clear Old Logs (30d+)
+                </button>
+
+                <button className="btn-sec" style={{ width: "100%", padding: 11, borderRadius: "var(--r-sm)", marginTop: 8 }}
+                  onClick={() => { setCodeManager(false); setSelectedCodes(new Set()); setMgrScreen(null); }}>
+                  Close
+                </button>
+              </>
+            )}
+
+            {/* ── BULK ADD SUB-SCREEN ── */}
+            {mgrScreen === "bulk" && (
+              <>
+                <button className="mgr-back" onClick={() => setMgrScreen(null)}>
+                  <svg width="8" height="13" viewBox="0 0 8 13" fill="none">
+                    <path d="M7 1L1.5 6.5L7 12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  Code Manager
+                </button>
+                <div className="m-head">
+                  <div className="m-title">Bulk Add</div>
+                  <div className="m-sub">One code per line or comma-separated. Duplicates skipped.</div>
+                </div>
+                <textarea className="bulk-ta" placeholder={"SB-001\nSB-002\nSB-003"}
+                  value={bulkText} onChange={e => setBulkText(e.target.value)} autoFocus />
+                <button className="btn-bulk" disabled={!bulkText.trim()} onClick={() => { addBulk(); setMgrScreen(null); }}>
+                  Add All Codes
+                </button>
+              </>
+            )}
+
+            {/* ── ALL CODES SUB-SCREEN ── */}
+            {mgrScreen === "codes" && (
+              <>
+                <button className="mgr-back" onClick={() => setMgrScreen(null)}>
+                  <svg width="8" height="13" viewBox="0 0 8 13" fill="none">
+                    <path d="M7 1L1.5 6.5L7 12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  Code Manager
+                </button>
+                <div className="m-head">
+                  <div className="m-title">All Codes</div>
+                  <div className="m-sub">{codes.length} code(s) total.</div>
+                </div>
+
+                <div className="seg-ctrl">
+                  <button className={mgrCodeFilter === "all" ? "active" : ""} onClick={() => setMgrCodeFilter("all")}>All</button>
+                  <button className={mgrCodeFilter === "available" ? "active" : ""} onClick={() => setMgrCodeFilter("available")}>Available</button>
+                  <button className={mgrCodeFilter === "taken" ? "active" : ""} onClick={() => setMgrCodeFilter("taken")}>Taken</button>
+                </div>
+
+                {/* Bulk action bar, unchanged behaviour: selection is independent of the
+                    display filter above it */}
+                <div className="bulk-bar">
+                  <div className="bulk-bar-left">
+                    <span className="bulk-sel-count">{selectedCodes.size} selected</span>
+                    <button className="btn-sel" onClick={selAll}>All</button>
+                    <button className="btn-sel" onClick={selAvail}>Available</button>
+                    <button className="btn-sel" onClick={selTaken}>Taken</button>
+                    <button className="btn-sel" onClick={selNone}>Clear</button>
+                  </div>
+                  <button className="btn-del-sel" disabled={selectedCodes.size === 0}
+                    onClick={() => setBulkDelConfirm(true)}>
+                    Delete ({selectedCodes.size})
+                  </button>
+                </div>
+
+                {codes.length === 0
+                  ? <div className="list-empty">No codes yet.</div>
+                  : (
+                    <div className="code-list">
+                      {managerCodes
+                        .filter(c => mgrCodeFilter === "all" ? true : c.status === mgrCodeFilter)
+                        .map(c => {
+                          const state = liveIds.has(c.id) ? "" : stagedIds.has(c.id) ? "sched" : "exp";
+                          return (
+                            <div key={c.id} className={`cl-item ${selectedCodes.has(c.id) ? "sel" : ""}`}
+                              onClick={() => toggleSel(c.id)}>
+                              <div className="cl-check">
+                                <svg className="cl-check-ico" width="10" height="10" viewBox="0 0 10 10" fill="none">
+                                  <path d="M2 5L4.2 7.5L8 3" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div className="cl-name">{c.code}</div>
+                                <div className="cl-meta">
+                                  {c.monthKey ? monthLabelShort(c.monthKey) : "No drop month"}
+                                  {" · "}
+                                  {c.status === STATUS.TAKEN ? `Taken by ${c.takenBy || "-"} · ${formatTime(c.takenAt)}` : "Available"}
+                                </div>
+                              </div>
+                              {state && (
+                                <span className={`bdg ${state}`}>
+                                  <span className="bdg-dot"></span>
+                                  {state === "sched" ? "Staged" : "Old"}
+                                </span>
+                              )}
+                              <span className={`bdg ${c.status === STATUS.AVAILABLE ? "avail" : "taken"}`}>
+                                <span className="bdg-dot"></span>
+                                {c.status === STATUS.AVAILABLE ? "Free" : "Taken"}
+                              </span>
+                              <button className="btn-del" onClick={e => { e.stopPropagation(); deleteCode(c.id); }}>Delete</button>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )
+                }
+              </>
+            )}
+
+            {/* ── ACTIVITY LOG SUB-SCREEN ── */}
+            {mgrScreen === "activity" && (
+              <>
+                <button className="mgr-back" onClick={() => setMgrScreen(null)}>
+                  <svg width="8" height="13" viewBox="0 0 8 13" fill="none">
+                    <path d="M7 1L1.5 6.5L7 12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  Code Manager
+                </button>
+                <div className="m-head">
+                  <div className="m-title">Activity Log</div>
+                  <div className="m-sub">Last 200 entries, 30 days.</div>
+                </div>
+                {actLog.length === 0
+                  ? <div className="act-empty">No activity yet.</div>
+                  : (
+                    <div className="act-log tall">
+                      {actLog.map(a => (
+                        <div key={a.id} className="act-item">
+                          <span className={`act-dot ${a.type}`}></span>
+                          <span className="act-text">{a.text}</span>
+                          <span className="act-time">{formatTimeShort(a.ts)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                }
+              </>
+            )}
+
+            {/* ── RELEASE HISTORY SUB-SCREEN ── */}
+            {mgrScreen === "history" && (
+              <>
+                <button className="mgr-back" onClick={() => setMgrScreen(null)}>
+                  <svg width="8" height="13" viewBox="0 0 8 13" fill="none">
+                    <path d="M7 1L1.5 6.5L7 12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  Code Manager
+                </button>
+                <div className="m-head">
+                  <div className="m-title">Release History</div>
+                  <div className="m-sub">Past 30 days.</div>
+                </div>
+                {releaseHistory.length === 0
+                  ? <div className="act-empty">No releases in the past 30 days.</div>
+                  : (
+                    <div className="act-log tall">
+                      {releaseHistory.map(r => {
                         const durMs = r.takenAt ? toMs(r.releasedAt) - toMs(r.takenAt) : null;
                         const durH = durMs ? Math.floor(durMs / (1000 * 60 * 60)) : 0;
                         const durM = durMs ? Math.floor((durMs % (1000 * 60 * 60)) / (1000 * 60)) : 0;
@@ -2412,35 +2642,16 @@ export default function App() {
                           </div>
                         );
                       })}
-                  </div>
-                )
-              }
-            </div>
+                    </div>
+                  )
+                }
+              </>
+            )}
 
-            {/* Export CSV */}
-            <button className="btn-export-csv" onClick={exportCSV}>
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-                <path d="M8 1v9M8 10l-3-3M8 10l3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-              Export CSV
-            </button>
-
-            {/* Clear Old Logs */}
-            <button className="btn-clear-logs" onClick={clearOldLogs}>
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-                <path d="M2 4h12M6.5 7v5M9.5 7v5M3 4l1 10a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-10M7 4V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              Clear Old Logs (30d+)
-            </button>
-
-            <button className="btn-sec" style={{ width: "100%", padding: 11, borderRadius: "var(--r-sm)", marginTop: 8 }}
-              onClick={() => { setCodeManager(false); setSelectedCodes(new Set()); }}>
-              Close
-            </button>
           </div>
         </div>
       )}
+
 
       {/* ── BULK DELETE CONFIRM ── */}
       {bulkDelConfirm && (
