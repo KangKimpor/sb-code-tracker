@@ -172,7 +172,7 @@ const styles = `
   .pill.month { background: var(--track); color: var(--text-3); }
   .pill.live { background: var(--track); color: var(--green-strong); }
   .pill.live .pill-dot { background: var(--green); animation: blink 2s infinite; }
-  .pill.admin { background: var(--red-light); border-color: var(--red-mid); color: var(--red-dark); }
+  .pill.admin { background: #ffe6e4; border-color: #ffc2bd; color: var(--red-dark); }
   .pill.admin .pill-dot { background: var(--red); }
   .pill.sched { background: rgba(175,82,222,0.10); border-color: rgba(175,82,222,0.28); color: #8e34c4; }
   .pill.sched .pill-dot { background: #af52de; }
