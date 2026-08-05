@@ -172,8 +172,7 @@ const styles = `
   .pill.month { background: var(--track); color: var(--text-3); }
   .pill.live { background: var(--track); color: var(--green-strong); }
   .pill.live .pill-dot { background: var(--green); animation: blink 2s infinite; }
-  .pill.admin { background: #ffe6e4; border-color: #ffc2bd; color: var(--red-dark); }
-  .pill.admin .pill-dot { background: var(--red); }
+  .pill.admin { background: var(--red); border-color: var(--red); color: #fff; }
   .pill.sched { background: rgba(175,82,222,0.10); border-color: rgba(175,82,222,0.28); color: #8e34c4; }
   .pill.sched .pill-dot { background: #af52de; }
   /* Staff waiting on a top-up. Orange rather than red: it is a request to act on, not
@@ -2050,9 +2049,7 @@ export default function App() {
                 <span className="pill-dot"></span>Live
               </span>
               {isAdmin && (
-                <span className="pill admin">
-                  <span className="pill-dot"></span>Admin
-                </span>
+                <span className="pill admin">Admin</span>
               )}
               {isAdmin && stagedCodes.length > 0 && (
                 <span className="pill sched" title={`${stagedCodes.length} code(s) staged for a future month`}>
