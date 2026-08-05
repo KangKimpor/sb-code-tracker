@@ -775,16 +775,16 @@ const styles = `
 
   .cl-item {
     display: flex; align-items: center;
-    padding: 9px 12px; border-bottom: 1px solid rgba(60,60,67,0.06);
-    gap: 10px; transition: background 0.12s; cursor: pointer;
+    padding: 12px 14px; border-bottom: 1px solid var(--border);
+    gap: 12px; transition: background 0.12s; cursor: pointer;
     user-select: none; -webkit-user-select: none;
   }
   .cl-item:last-child { border-bottom: none; }
   .cl-item:hover { background: var(--bg); }
-  .cl-item.sel { background: #e0effe; }
+  .cl-item.sel { background: var(--track); }
 
   .cl-check {
-    width: 17px; height: 17px; border-radius: 5px;
+    width: 18px; height: 18px; border-radius: 5px;
     border: 1.5px solid var(--border-mid);
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0; background: var(--surface);
@@ -794,43 +794,67 @@ const styles = `
   .cl-check-ico { display: none; }
   .cl-item.sel .cl-check-ico { display: block; }
 
-  .cl-name { font-size: 13px; font-weight: 600; color: var(--text); font-family: var(--font-mono); flex: 1; }
-  .cl-meta { font-size: 11px; color: var(--text-4); }
+  .cl-name-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+  .cl-name { font-size: 14px; font-weight: 600; color: var(--text); font-family: var(--font-mono); letter-spacing: 0.2px; }
+  .cl-tag {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
+    padding: 1px 6px; border-radius: 4px; flex-shrink: 0;
+  }
+  .cl-tag.sched { background: var(--text); color: #fff; }
+  .cl-tag.exp { background: var(--surface-recessed); color: var(--text-4); border: 1px solid var(--border-mid); }
+  .cl-meta { font-size: 12px; color: var(--text-3); }
+
+  /* Status: a dot plus label, no filled pill. Apple's list-row convention for state
+     (Settings, Health) reads status inline rather than as a loud colored badge. */
+  .cl-status {
+    display: flex; align-items: center; gap: 5px; flex-shrink: 0;
+    font-size: 12px; font-weight: 600;
+  }
+  .cl-status.avail { color: var(--green-dark); }
+  .cl-status.taken { color: var(--text-3); }
+  .cl-status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .cl-status.avail .cl-status-dot { background: var(--green-strong); }
+  .cl-status.taken .cl-status-dot { background: var(--text-4); }
 
   .btn-del {
     background: none; border: 1px solid var(--border);
     border-radius: 6px; font-family: var(--font);
     font-size: 11.5px; color: var(--text-4);
-    padding: 3px 9px; cursor: pointer; transition: all 0.15s; flex-shrink: 0;
+    padding: 4px 10px; cursor: pointer; transition: all 0.15s; flex-shrink: 0;
   }
-  .btn-del:hover { border-color: var(--red-mid); color: var(--red); background: var(--red-light); }
+  .btn-del:hover { border-color: var(--red); color: #fff; background: var(--red); }
 
   .list-empty { padding: 24px; text-align: center; color: var(--text-4); font-size: 13px; }
 
-  /* Bulk action bar */
-  .bulk-bar {
+  /* Selection toolbar: plain text-button row, native select-mode feel rather than a
+     tinted card. The "N selected" toolbar only appears once something is selected;
+     the quick-select links sit above it at all times. */
+  .sel-quick-row {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    margin-bottom: 8px; padding: 0 2px;
+  }
+  .btn-textlink {
+    background: none; border: none; padding: 0;
+    font-family: var(--font); font-size: 12.5px; font-weight: 500;
+    color: var(--blue); cursor: pointer; transition: opacity 0.15s;
+  }
+  .btn-textlink:hover { opacity: 0.6; }
+
+  .sel-toolbar {
     display: flex; align-items: center; justify-content: space-between;
-    gap: 8px; padding: 8px 12px;
-    background: #e0effe; border: 1px solid #b9d9fc;
-    border-radius: var(--r-sm); margin-bottom: 10px; flex-wrap: wrap;
+    padding: 9px 12px; margin-bottom: 8px;
+    background: var(--text); border-radius: var(--r-sm);
   }
-  .bulk-bar-left { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .bulk-sel-count { font-size: 12.5px; font-weight: 600; color: var(--blue); }
-  .btn-sel {
-    background: var(--surface); border: 1px solid #b9d9fc;
-    border-radius: 6px; font-family: var(--font); font-size: 11.5px;
-    font-weight: 500; color: var(--blue); padding: 3px 10px;
-    cursor: pointer; transition: all 0.15s; white-space: nowrap;
-  }
-  .btn-sel:hover { background: #b9d9fc; }
-  .btn-del-sel {
+  .sel-count { font-size: 12.5px; font-weight: 600; color: #fff; }
+  .sel-toolbar-actions { display: flex; align-items: center; gap: 14px; }
+  .sel-toolbar .btn-textlink { color: rgba(255,255,255,0.7); }
+  .sel-toolbar .btn-textlink:hover { color: #fff; opacity: 1; }
+  .sel-toolbar .btn-del-sel {
     background: var(--red); color: #fff; border: none;
     border-radius: 6px; font-family: var(--font); font-size: 11.5px;
-    font-weight: 600; padding: 5px 12px; cursor: pointer;
-    transition: all 0.15s; flex-shrink: 0; white-space: nowrap;
+    font-weight: 600; padding: 5px 12px; cursor: pointer; transition: all 0.15s;
   }
-  .btn-del-sel:hover { background: var(--red-dark); }
-  .btn-del-sel:disabled { opacity: 0.35; cursor: default; }
+  .sel-toolbar .btn-del-sel:hover { background: var(--red-dark); }
 
   /* Activity log */
   .act-log { max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--r-sm); }
@@ -866,24 +890,25 @@ const styles = `
   /* Export CSV button */
   .btn-export-csv {
     width: 100%; display: flex; align-items: center; justify-content: center; gap: 7px;
-    background: #e3f8e9; border: 1px solid #b8ecc7;
+    background: var(--text); border: none; color: #fff;
     border-radius: var(--r-sm); font-family: var(--font);
-    font-size: 13px; font-weight: 600; color: var(--green-dark);
-    padding: 10px; cursor: pointer; transition: all 0.15s;
+    font-size: 13.5px; font-weight: 600;
+    padding: 12px; cursor: pointer; transition: all 0.15s;
     margin-top: 20px;
   }
-  .btn-export-csv:hover { background: #cdf1d9; }
+  .btn-export-csv:hover { background: #3a3a3c; }
   .btn-export-csv:active { transform: scale(0.98); }
 
-  /* Clear Old Logs button */
+  /* Clear Old Logs: outlined destructive, quiet by default since it's a rare
+     maintenance action, not something to compete visually with Export CSV. */
   .btn-clear-logs {
     width: 100%; display: flex; align-items: center; justify-content: center; gap: 7px;
-    background: #fdead9; border: 1px solid #fbd2a8;
+    background: var(--surface); border: 1px solid var(--border-mid); color: var(--red);
     border-radius: var(--r-sm); font-family: var(--font);
-    font-size: 13px; font-weight: 600; color: #c97a00;
-    padding: 10px; cursor: pointer; transition: all 0.15s; margin-top: 8px;
+    font-size: 13.5px; font-weight: 600;
+    padding: 12px; cursor: pointer; transition: all 0.15s; margin-top: 8px;
   }
-  .btn-clear-logs:hover { background: #fbd8b6; border-color: #f7be82; }
+  .btn-clear-logs:hover { background: var(--red); border-color: var(--red); color: #fff; }
   .btn-clear-logs:active { transform: scale(0.98); }
 
   /* ─── CODE REVEAL (inside Take modal) ─── */
@@ -2513,20 +2538,24 @@ export default function App() {
                   <button className={mgrCodeFilter === "taken" ? "active" : ""} onClick={() => setMgrCodeFilter("taken")}>Taken</button>
                 </div>
 
-                {/* Bulk action bar, unchanged behaviour: selection is independent of the
-                    display filter above it */}
-                <div className="bulk-bar">
-                  <div className="bulk-bar-left">
-                    <span className="bulk-sel-count">{selectedCodes.size} selected</span>
-                    <button className="btn-sel" onClick={selAll}>All</button>
-                    <button className="btn-sel" onClick={selAvail}>Available</button>
-                    <button className="btn-sel" onClick={selTaken}>Taken</button>
-                    <button className="btn-sel" onClick={selNone}>Clear</button>
+                {/* Selection toolbar, unchanged behaviour: selection is independent of the
+                    display filter above it. Only shown once something is selected, plain
+                    text-button row rather than a tinted card, native-select-mode feel. */}
+                {selectedCodes.size > 0 && (
+                  <div className="sel-toolbar">
+                    <span className="sel-count">{selectedCodes.size} selected</span>
+                    <div className="sel-toolbar-actions">
+                      <button className="btn-textlink" onClick={selNone}>Clear</button>
+                      <button className="btn-del-sel" onClick={() => setBulkDelConfirm(true)}>
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                  <button className="btn-del-sel" disabled={selectedCodes.size === 0}
-                    onClick={() => setBulkDelConfirm(true)}>
-                    Delete ({selectedCodes.size})
-                  </button>
+                )}
+                <div className="sel-quick-row">
+                  <button className="btn-textlink" onClick={selAll}>Select All</button>
+                  <button className="btn-textlink" onClick={selAvail}>Select Available</button>
+                  <button className="btn-textlink" onClick={selTaken}>Select Taken</button>
                 </div>
 
                 {codes.length === 0
@@ -2537,6 +2566,7 @@ export default function App() {
                         .filter(c => mgrCodeFilter === "all" ? true : c.status === mgrCodeFilter)
                         .map(c => {
                           const state = liveIds.has(c.id) ? "" : stagedIds.has(c.id) ? "sched" : "exp";
+                          const isTaken = c.status === STATUS.TAKEN;
                           return (
                             <div key={c.id} className={`cl-item ${selectedCodes.has(c.id) ? "sel" : ""}`}
                               onClick={() => toggleSel(c.id)}>
@@ -2546,22 +2576,21 @@ export default function App() {
                                 </svg>
                               </div>
                               <div style={{ flex: 1, minWidth: 0 }}>
-                                <div className="cl-name">{c.code}</div>
+                                <div className="cl-name-row">
+                                  <span className="cl-name">{c.code}</span>
+                                  {state && (
+                                    <span className={`cl-tag ${state}`}>{state === "sched" ? "Staged" : "Old"}</span>
+                                  )}
+                                </div>
                                 <div className="cl-meta">
                                   {c.monthKey ? monthLabelShort(c.monthKey) : "No drop month"}
                                   {" · "}
-                                  {c.status === STATUS.TAKEN ? `Taken by ${c.takenBy || "-"} · ${formatTime(c.takenAt)}` : "Available"}
+                                  {isTaken ? `Taken by ${c.takenBy || "-"} · ${formatTime(c.takenAt)}` : "Available"}
                                 </div>
                               </div>
-                              {state && (
-                                <span className={`bdg ${state}`}>
-                                  <span className="bdg-dot"></span>
-                                  {state === "sched" ? "Staged" : "Old"}
-                                </span>
-                              )}
-                              <span className={`bdg ${c.status === STATUS.AVAILABLE ? "avail" : "taken"}`}>
-                                <span className="bdg-dot"></span>
-                                {c.status === STATUS.AVAILABLE ? "Free" : "Taken"}
+                              <span className={`cl-status ${isTaken ? "taken" : "avail"}`}>
+                                <span className="cl-status-dot"></span>
+                                {isTaken ? "Taken" : "Free"}
                               </span>
                               <button className="btn-del" onClick={e => { e.stopPropagation(); deleteCode(c.id); }}>Delete</button>
                             </div>
