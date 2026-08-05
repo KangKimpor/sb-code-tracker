@@ -3,7 +3,8 @@ import { useState, useEffect, useRef } from "react";
 import { Analytics } from "@vercel/analytics/react";
 import { initializeApp } from "firebase/app";
 import {
-  getFirestore, collection, onSnapshot,
+  initializeFirestore, persistentLocalCache, persistentSingleTabManager,
+  collection, onSnapshot,
   addDoc, updateDoc, deleteDoc, doc,
   query, orderBy, limit, where,
   serverTimestamp, runTransaction, getDocs, writeBatch, Timestamp
@@ -22,7 +23,18 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+// PERF FIX: default getFirestore() has no local cache, so every listener attach and
+// every runTransaction (the Take flow) round-trips cold to Firestore's backend with
+// no warm channel to reuse. On slow/flaky mobile networks this reads as "laggy, slow
+// to load the code" specifically on Take, since the reveal screen intentionally waits
+// for server confirmation before showing the code. persistentLocalCache lets the codes
+// listener paint from a warm local cache immediately instead of waiting on the network,
+// and experimentalAutoDetectLongPolling falls back off WebChannel streaming on networks
+// (some mobile carriers, corporate wifi) where it stalls instead of erroring cleanly.
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
+  experimentalAutoDetectLongPolling: true,
+});
 const codesRef = collection(db, "codes");
 const logsRef = collection(db, "activityLog");
 const releaseHistRef = collection(db, "releaseHistory");
