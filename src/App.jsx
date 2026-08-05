@@ -365,13 +365,13 @@ const styles = `
     padding: 2px 8px; border: 1px solid transparent;
   }
   .bdg-dot { width: 4px; height: 4px; border-radius: 50%; flex-shrink: 0; }
-  .bdg.avail { background: var(--green-light); color: var(--green-dark); border-color: var(--green-mid); }
+  .bdg.avail { background: #e3f8e9; color: var(--green-dark); border-color: #b8ecc7; }
   .bdg.avail .bdg-dot { background: var(--green-dark); }
-  .bdg.taken { background: var(--red-light); color: var(--red); border-color: var(--red-mid); }
+  .bdg.taken { background: #ffe6e4; color: var(--red); border-color: #ffc2bd; }
   .bdg.taken .bdg-dot { background: var(--red); }
-  .bdg.sched { background: rgba(175,82,222,0.10); color: #8e34c4; border-color: rgba(175,82,222,0.28); }
+  .bdg.sched { background: #f1e3fb; color: #8e34c4; border-color: #ddbdf3; }
   .bdg.sched .bdg-dot { background: #af52de; }
-  .bdg.exp { background: var(--surface-2); color: var(--text-4); border-color: var(--border-mid); }
+  .bdg.exp { background: var(--surface-recessed); color: var(--text-4); border-color: var(--border-mid); }
   .bdg.exp .bdg-dot { background: var(--text-4); }
 
   /* Row action buttons */
@@ -454,17 +454,15 @@ const styles = `
   /* ─── OVERLAY / MODAL ─── */
   .overlay {
     position: fixed; inset: 0;
-    background: rgba(0,0,0,0.28);
+    background: rgba(0,0,0,0.5);
     display: flex; align-items: center; justify-content: center;
     z-index: 100; padding: 20px;
-    backdrop-filter: blur(12px) saturate(160%);
-    -webkit-backdrop-filter: blur(12px) saturate(160%);
     animation: fadeOvr 0.18s ease;
   }
   @keyframes fadeOvr { from{opacity:0;} to{opacity:1;} }
 
   .modal {
-    background: rgba(255,255,255,0.96);
+    background: var(--surface);
     border-radius: var(--r-2xl);
     padding: 26px 24px;
     width: 100%; max-width: 390px;
@@ -783,7 +781,7 @@ const styles = `
   }
   .cl-item:last-child { border-bottom: none; }
   .cl-item:hover { background: var(--bg); }
-  .cl-item.sel { background: var(--blue-light); }
+  .cl-item.sel { background: #e0effe; }
 
   .cl-check {
     width: 17px; height: 17px; border-radius: 5px;
@@ -813,18 +811,18 @@ const styles = `
   .bulk-bar {
     display: flex; align-items: center; justify-content: space-between;
     gap: 8px; padding: 8px 12px;
-    background: var(--blue-light); border: 1px solid var(--blue-mid);
+    background: #e0effe; border: 1px solid #b9d9fc;
     border-radius: var(--r-sm); margin-bottom: 10px; flex-wrap: wrap;
   }
   .bulk-bar-left { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .bulk-sel-count { font-size: 12.5px; font-weight: 600; color: var(--blue); }
   .btn-sel {
-    background: none; border: 1px solid var(--blue-mid);
+    background: var(--surface); border: 1px solid #b9d9fc;
     border-radius: 6px; font-family: var(--font); font-size: 11.5px;
     font-weight: 500; color: var(--blue); padding: 3px 10px;
     cursor: pointer; transition: all 0.15s; white-space: nowrap;
   }
-  .btn-sel:hover { background: var(--blue-mid); }
+  .btn-sel:hover { background: #b9d9fc; }
   .btn-del-sel {
     background: var(--red); color: #fff; border: none;
     border-radius: 6px; font-family: var(--font); font-size: 11.5px;
@@ -868,24 +866,24 @@ const styles = `
   /* Export CSV button */
   .btn-export-csv {
     width: 100%; display: flex; align-items: center; justify-content: center; gap: 7px;
-    background: var(--green-light); border: 1px solid var(--green-mid);
+    background: #e3f8e9; border: 1px solid #b8ecc7;
     border-radius: var(--r-sm); font-family: var(--font);
     font-size: 13px; font-weight: 600; color: var(--green-dark);
     padding: 10px; cursor: pointer; transition: all 0.15s;
     margin-top: 20px;
   }
-  .btn-export-csv:hover { background: var(--green-mid); }
+  .btn-export-csv:hover { background: #cdf1d9; }
   .btn-export-csv:active { transform: scale(0.98); }
 
   /* Clear Old Logs button */
   .btn-clear-logs {
     width: 100%; display: flex; align-items: center; justify-content: center; gap: 7px;
-    background: rgba(255, 159, 64, 0.12); border: 1px solid rgba(255, 159, 64, 0.2);
+    background: #fdead9; border: 1px solid #fbd2a8;
     border-radius: var(--r-sm); font-family: var(--font);
     font-size: 13px; font-weight: 600; color: #c97a00;
     padding: 10px; cursor: pointer; transition: all 0.15s; margin-top: 8px;
   }
-  .btn-clear-logs:hover { background: rgba(255, 159, 64, 0.2); border-color: rgba(255, 159, 64, 0.35); }
+  .btn-clear-logs:hover { background: #fbd8b6; border-color: #f7be82; }
   .btn-clear-logs:active { transform: scale(0.98); }
 
   /* ─── CODE REVEAL (inside Take modal) ─── */
@@ -903,7 +901,6 @@ const styles = `
      rounder corners and roomier padding are applied via a class added when revealing
      rather than by changing the shared token. */
   .reveal-modal { border-radius: 30px; padding: 30px 26px; }
-  .reveal-icon { font-size: 44px; line-height: 1; margin-bottom: 8px; }
   .reveal-label {
     font-size: 13px; font-weight: 700; color: var(--text-4);
     text-transform: uppercase; letter-spacing: 2px;
@@ -948,7 +945,6 @@ const styles = `
      character codes on one line. */
   @media (max-width: 420px) {
     .reveal-modal { border-radius: 26px; padding: 26px 20px; }
-    .reveal-icon { font-size: 38px; }
     .reveal-code { font-size: 27px; padding: 19px 14px; letter-spacing: 0.5px; }
     .reveal-btn { padding: 15px 10px; font-size: 15px; }
   }
@@ -2200,7 +2196,6 @@ export default function App() {
             {revealedCode ? (
               /* Reveal screen, shown after successful Take (Fix #11) */
               <div className="reveal-screen">
-                <div className="reveal-icon">🎉</div>
                 <div className="reveal-label">Your Code</div>
                 <div className="reveal-code">{revealedCode.code}</div>
                 <div className="reveal-sub">Assigned to <strong>{revealedCode.name}</strong>.</div>
