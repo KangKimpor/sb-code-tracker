@@ -1557,15 +1557,23 @@ export default function App() {
     try {
       // FIX #6: Transaction ensures the code is still available before writing.
       // If two users tap Take at the same time, only one wins and the other sees an error.
-      await runTransaction(db, async (tx) => {
-        const ref = doc(db, "codes", id);
-        const snap = await tx.get(ref);
-        if (!snap.exists() || snap.data().status !== STATUS.AVAILABLE) {
-          throw new Error("already_taken");
-        }
-        // FIX #7: serverTimestamp() writes the server's authoritative time, not the client clock
-        tx.update(ref, { status: STATUS.TAKEN, takenBy: name, takenAt: serverTimestamp() });
-      });
+      // FIX #14: runTransaction has no built-in timeout. A stalled connection, rules
+      // drift, or a slow WebChannel round trip left the button on "Confirming..."
+      // forever with no error and no way to recover except reloading. Racing it
+      // against a timeout guarantees the button always resolves one way or another.
+      const TAKE_TIMEOUT_MS = 12000;
+      await Promise.race([
+        runTransaction(db, async (tx) => {
+          const ref = doc(db, "codes", id);
+          const snap = await tx.get(ref);
+          if (!snap.exists() || snap.data().status !== STATUS.AVAILABLE) {
+            throw new Error("already_taken");
+          }
+          // FIX #7: serverTimestamp() writes the server's authoritative time, not the client clock
+          tx.update(ref, { status: STATUS.TAKEN, takenBy: name, takenAt: serverTimestamp() });
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), TAKE_TIMEOUT_MS)),
+      ]);
     } catch (err) {
       // Rollback optimistic row and show error. Reveal screen was never shown, so nothing to hide
       setOptimistic(p => { const n = { ...p }; delete n[id]; return n; });
@@ -1574,6 +1582,8 @@ export default function App() {
       // skipping setTakeBusy(false) and permanently freezing the Confirm button.
       if (err?.message === "already_taken") {
         setTakeError("Sorry, this code was just taken by someone else. Please choose another.");
+      } else if (err?.message === "timeout") {
+        setTakeError("This is taking too long. Check your connection and try again.");
       } else {
         setTakeError("Something went wrong. Please try again.");
       }
