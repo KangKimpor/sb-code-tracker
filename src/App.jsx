@@ -1207,6 +1207,15 @@ export default function App() {
   const [codes, setCodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [connError, setConnError] = useState(false);
+  // OFFLINE FIX: persistentLocalCache (added for the "Fix lag" perf change) means
+  // onSnapshot's success callback now fires from the local cache even with zero
+  // connectivity, so `err` never fires and `loading`/`connError` stop being a reliable
+  // proxy for "we can actually reach Firestore right now". `isStale` tracks that gap:
+  // true whenever the most recent snapshot came from cache AND the browser reports
+  // offline. It does not replace connError (a real listener error is still a real error);
+  // it exists so the cleanup sweep, which writes deletes, can refuse to run on data it
+  // cannot confirm is current. See the codes listener and the sweep effect below.
+  const [isStale, setIsStale] = useState(false);
   const [filter, setFilter] = useState("available");
   const [isAdmin, setIsAdmin] = useState(false);
   const [optimistic, setOptimistic] = useState({});
@@ -1345,7 +1354,12 @@ export default function App() {
 
   // Firebase real-time listener: codes (always on)
   useEffect(() => {
-    const unsub = onSnapshot(codesRef, snap => {
+    // OFFLINE FIX: includeMetadataChanges plus snapshot.metadata.fromCache is how you
+    // tell a genuinely fresh snapshot apart from a cache replay now that persistence is
+    // on. fromCache alone is not enough, a healthy online listener also serves its very
+    // first paint from cache before the server ack lands, so it is paired with
+    // navigator.onLine: only "from cache" AND "browser reports offline" counts as stale.
+    const unsub = onSnapshot(codesRef, { includeMetadataChanges: true }, snap => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       // `|| 0` keeps the comparator consistent if a doc was added outside the app
       // (e.g. via the Firebase console) and has no createdAt. Otherwise NaN makes
@@ -1354,6 +1368,7 @@ export default function App() {
       setCodes(data);
       setLoading(false);
       setConnError(false);
+      setIsStale(snap.metadata.fromCache && !navigator.onLine);
     }, err => {
       // ponytail: keep last-good codes on screen; surface a banner instead of an infinite "Connecting..." spinner
       console.error("codes listener failed:", err);
@@ -1451,8 +1466,15 @@ export default function App() {
   //
   // Skipped while offline. A failure stops further attempts for the rest of the month so
   // a permission error can't turn every snapshot into another round of failing batches.
+  // OFFLINE FIX: `loading`/`connError` alone no longer prove we're online now that
+  // persistentLocalCache is on (see isStale above): without this, a device that goes
+  // offline mid-session would see a normal-looking, fully-loaded, error-free codes list
+  // and happily fire batch.commit() deletes against it. Those deletes would then queue in
+  // the local cache indefinitely instead of failing fast, leaving sweep.current.busy stuck
+  // true and silently blocking every sweep for the rest of the session, even after
+  // reconnecting, since nothing here would ever resolve to flip it back.
   useEffect(() => {
-    if (loading || connError) return;
+    if (loading || connError || isStale) return;
     if (sweep.current.busy || sweep.current.failedMonth === nowMonth) return;
     const { live, stale } = partitionCodes(codes, nowMonth);
     if (!stale.length) return;
@@ -1478,7 +1500,7 @@ export default function App() {
         sweep.current.busy = false;
       }
     })();
-  }, [codes, loading, connError, nowMonth]);
+  }, [codes, loading, connError, isStale, nowMonth]);
 
   // ── Actions ──
   const handlePin = () => {
@@ -1554,18 +1576,48 @@ export default function App() {
     // avoids flashing "Your Code" for a code the user didn't actually win when two
     // people tap Take on the same code at nearly the same instant.
     setOptimistic(p => ({ ...p, [id]: { status: STATUS.TAKEN, takenBy: name, takenAt: Date.now() } }));
+    // FIX #6: Transaction ensures the code is still available before writing.
+    // If two users tap Take at the same time, only one wins and the other sees an error.
+    const attempt = runTransaction(db, async (tx) => {
+      const ref = doc(db, "codes", id);
+      const snap = await tx.get(ref);
+      if (!snap.exists() || snap.data().status !== STATUS.AVAILABLE) {
+        throw new Error("already_taken");
+      }
+      // FIX #7: serverTimestamp() writes the server's authoritative time, not the client clock
+      tx.update(ref, { status: STATUS.TAKEN, takenBy: name, takenAt: serverTimestamp() });
+    });
+    // FIX #14: runTransaction has no built-in timeout. A stalled connection, rules drift,
+    // or a slow round trip left the button on "Confirming..." forever with no error and no
+    // recovery except reloading. A bare Promise.race would "fix" that on-screen while the
+    // transaction kept running unseen: if it later landed, the code was claimed with the
+    // modal already closed and the staff member none the wiser, sometimes leading them to
+    // claim a second code thinking the first attempt failed. `timedOut` tracks whether the
+    // race's clock branch already won, so the settle handler below can react correctly
+    // instead of trusting a stale "still loading" UI state.
+    let timedOut = false;
+    const TAKE_TIMEOUT_MS = 12000;
+    const timer = new Promise((_, reject) => {
+      setTimeout(() => { timedOut = true; reject(new Error("timeout")); }, TAKE_TIMEOUT_MS);
+    });
+    // The attempt keeps running even if the timer wins the race below; this handler is what
+    // reconciles a late success or failure once the button has already moved on.
+    attempt.then(() => {
+      if (!timedOut) return;
+      // Landed after we told the staff member it timed out. The code is genuinely theirs now,
+      // so surface it rather than leaving it silently claimed under their name with no reveal.
+      log("take", `${name} took ${code} (confirmed late after a timeout)`);
+      alert(`Your code came through after all: ${code}\nMake sure to note it down.`);
+    }).catch(err => {
+      if (!timedOut) return;
+      // Lost the race after the timeout already rolled back the optimistic row and freed the
+      // button. Nothing claimed, nothing to reconcile; only log unexpected failures.
+      if (err?.message !== "already_taken") {
+        console.error("takeCode settled late after timeout:", err);
+      }
+    });
     try {
-      // FIX #6: Transaction ensures the code is still available before writing.
-      // If two users tap Take at the same time, only one wins and the other sees an error.
-      await runTransaction(db, async (tx) => {
-        const ref = doc(db, "codes", id);
-        const snap = await tx.get(ref);
-        if (!snap.exists() || snap.data().status !== STATUS.AVAILABLE) {
-          throw new Error("already_taken");
-        }
-        // FIX #7: serverTimestamp() writes the server's authoritative time, not the client clock
-        tx.update(ref, { status: STATUS.TAKEN, takenBy: name, takenAt: serverTimestamp() });
-      });
+      await Promise.race([attempt, timer]);
     } catch (err) {
       // Rollback optimistic row and show error. Reveal screen was never shown, so nothing to hide
       setOptimistic(p => { const n = { ...p }; delete n[id]; return n; });
@@ -1574,6 +1626,8 @@ export default function App() {
       // skipping setTakeBusy(false) and permanently freezing the Confirm button.
       if (err?.message === "already_taken") {
         setTakeError("Sorry, this code was just taken by someone else. Please choose another.");
+      } else if (err?.message === "timeout") {
+        setTakeError("This is taking too long. Check your connection. We'll let you know if it goes through.");
       } else {
         setTakeError("Something went wrong. Please try again.");
       }
@@ -2080,6 +2134,15 @@ export default function App() {
         {connError && (
           <div className="conn-banner">
             Connection lost. Showing last known data. <button onClick={() => window.location.reload()}>Retry</button>
+          </div>
+        )}
+        {!connError && isStale && (
+          // OFFLINE FIX: distinct from connError. The listener never errored, it's happily
+          // serving last-known data from the local cache while the device itself is offline
+          // (see isStale above). Same banner style as connError for consistency, different
+          // copy since "connection lost" would be misleading when the app never noticed.
+          <div className="conn-banner">
+            Offline. Showing last known data. Take may not work until you reconnect.
           </div>
         )}
 
