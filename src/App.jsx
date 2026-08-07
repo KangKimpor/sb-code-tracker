@@ -902,6 +902,7 @@ const styles = `
   .act-text { font-size: 12px; color: var(--text-3); flex: 1; line-height: 1.4; }
   .act-text strong { color: var(--text); font-weight: 600; }
   .act-time { font-size: 10.5px; color: var(--text-4); font-family: var(--font-mono); white-space: nowrap; }
+  .act-device { color: var(--text-4); font-family: var(--font-mono); font-size: 11px; }
   .act-empty { padding: 20px; text-align: center; color: var(--text-4); font-size: 12.5px; }
 
   /* Bulk delete confirm modal list */
@@ -1212,8 +1213,12 @@ function readLastRequest() {
 // dependency array of the cleanup effect, which would otherwise re-run on
 // every render (it would be a new function identity each time).
 // Intentionally swallows errors: audit logging must never block a staff member.
+// deviceId is stamped on every entry (staff takes and admin actions alike) so the
+// admin can tell which browser did what without it depending on the free-text name
+// typed into the take modal. Calling getDeviceId() here rather than threading it
+// through every call site keeps every existing call to log() correct for free.
 function log(type, text) {
-  addDoc(logsRef, { type, text, ts: Date.now() }).catch(() => {});
+  addDoc(logsRef, { type, text, ts: Date.now(), deviceId: getDeviceId() }).catch(() => {});
 }
 
 export default function App() {
@@ -1598,7 +1603,10 @@ export default function App() {
         throw new Error("already_taken");
       }
       // FIX #7: serverTimestamp() writes the server's authoritative time, not the client clock
-      tx.update(ref, { status: STATUS.TAKEN, takenBy: name, takenAt: serverTimestamp() });
+      // takenDevice: the claiming browser's random device id (see getDeviceId), so a
+      // claim can be traced back to a device even if the typed name is unreliable or
+      // reused. Not a person or a fingerprint, same caveat as topupRequests.deviceId.
+      tx.update(ref, { status: STATUS.TAKEN, takenBy: name, takenAt: serverTimestamp(), takenDevice: getDeviceId() });
     });
     // FIX #14: runTransaction has no built-in timeout. A stalled connection, rules drift,
     // or a slow round trip left the button on "Confirming..." forever with no error and no
@@ -1705,10 +1713,11 @@ export default function App() {
     const code = releaseConfirm?.code;
     const by = releaseConfirm?.takenBy;
     const takenAt = releaseConfirm?.takenAt;
-    setOptimistic(p => ({ ...p, [id]: { status: STATUS.AVAILABLE, takenBy: null, takenAt: null } }));
+    const takenDevice = releaseConfirm?.takenDevice;
+    setOptimistic(p => ({ ...p, [id]: { status: STATUS.AVAILABLE, takenBy: null, takenAt: null, takenDevice: null } }));
     setReleaseConfirm(null);
     try {
-      await updateDoc(doc(db, "codes", id), { status: STATUS.AVAILABLE, takenBy: null, takenAt: null });
+      await updateDoc(doc(db, "codes", id), { status: STATUS.AVAILABLE, takenBy: null, takenAt: null, takenDevice: null });
       // History is written only AFTER the release is confirmed. Writing it first
       // meant a failed updateDoc left a permanent record of a release that never
       // happened. `codes` is the source of truth, so ordering it this way makes a
@@ -1716,7 +1725,7 @@ export default function App() {
       if (code) {
         // serverTimestamp() for releasedAt, authoritative server time
         await addDoc(releaseHistRef, {
-          code, takenBy: by || "-", takenAt: takenAt || null, releasedAt: serverTimestamp()
+          code, takenBy: by || "-", takenAt: takenAt || null, takenDevice: takenDevice || null, releasedAt: serverTimestamp()
         }).catch(err => console.error("release history write failed:", err));
       }
       log("release", `Released ${code}${by ? ` from ${by}` : ""}`);
@@ -2265,7 +2274,7 @@ export default function App() {
                         {c.status === STATUS.AVAILABLE
                           ? <button className="btn-take" onClick={() => setTakeModal({ id: c.id, code: c.code })}>Take</button>
                           : isAdmin
-                            ? <button className="btn-release" onClick={() => setReleaseConfirm({ id: c.id, code: c.code, takenBy: c.takenBy, takenAt: c.takenAt })}>Release</button>
+                            ? <button className="btn-release" onClick={() => setReleaseConfirm({ id: c.id, code: c.code, takenBy: c.takenBy, takenAt: c.takenAt, takenDevice: c.takenDevice })}>Release</button>
                             : <span className="btn-taken-lock">Taken</span>
                         }
                       </div>
@@ -2746,6 +2755,7 @@ export default function App() {
                               <strong>{r.code}</strong> held by <strong>{r.takenBy}</strong>
                               {r.takenAt && ` · took ${formatTime(r.takenAt)}`}
                               {durStr}
+                              {r.takenDevice && <span className="act-device" title={r.takenDevice}> · dev {r.takenDevice.slice(-6)}</span>}
                             </span>
                             <span className="act-time">{formatTimeShort(r.releasedAt)}</span>
                           </div>
