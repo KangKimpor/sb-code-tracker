@@ -7,7 +7,7 @@ import {
   collection, onSnapshot,
   addDoc, updateDoc, deleteDoc, doc,
   query, orderBy, limit, where,
-  serverTimestamp, runTransaction, getDocs, writeBatch, Timestamp
+  serverTimestamp, getDocs, writeBatch, Timestamp
 } from "firebase/firestore";
 
 // 🔥 Firebase config loaded from environment variables
@@ -23,14 +23,16 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-// PERF FIX: default getFirestore() has no local cache, so every listener attach and
-// every runTransaction (the Take flow) round-trips cold to Firestore's backend with
-// no warm channel to reuse. On slow/flaky mobile networks this reads as "laggy, slow
-// to load the code" specifically on Take, since the reveal screen intentionally waits
-// for server confirmation before showing the code. persistentLocalCache lets the codes
-// listener paint from a warm local cache immediately instead of waiting on the network,
-// and experimentalAutoDetectLongPolling falls back off WebChannel streaming on networks
-// (some mobile carriers, corporate wifi) where it stalls instead of erroring cleanly.
+// PERF FIX: default getFirestore() has no local cache, so every listener attach
+// round-trips cold to Firestore's backend with no warm channel to reuse. On
+// slow/flaky mobile networks this reads as "laggy, slow to load." persistentLocalCache
+// lets the codes listener paint from a warm local cache immediately instead of waiting
+// on the network, and experimentalAutoDetectLongPolling falls back off WebChannel
+// streaming on networks (some mobile carriers, corporate wifi) where it stalls instead
+// of erroring cleanly. As of v3.7.0, Take itself no longer waits on a transaction
+// round-trip either (the reveal is optimistic, see takeCode), so this cache mainly
+// still matters for the initial code list paint and for Release, which still queues
+// a plain updateDoc.
 const db = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
   experimentalAutoDetectLongPolling: true,
@@ -1585,82 +1587,106 @@ export default function App() {
     }
   };
 
+  // v3.7.0: FIX #16, replaced runTransaction with a plain updateDoc, and made the
+  // reveal itself optimistic instead of waiting on the write. The old design paid a
+  // full read-then-write transaction round-trip, and delayed the reveal screen
+  // until it confirmed, on every single Take, specifically to guard against two
+  // people tapping the same code at nearly the same instant, even though that case
+  // is rare (most Takes are uncontested). That made the common, uncontested case
+  // pay the same latency as the rare, contested one.
+  //
+  // Correctness now lives entirely in firestore.rules instead of in this function:
+  // the CLAIM branch of the update rule requires resource.data.status ==
+  // 'available' at write time, so a losing updateDoc is rejected by the server with
+  // permission-denied, the same outcome a failed runTransaction used to produce,
+  // just discovered after an optimistic reveal instead of before one. See the
+  // "THIS IS THE LOAD-BEARING CHECK" comment in firestore.rules; do not weaken that
+  // condition or this whole function becomes unsafe, since nothing else is
+  // checking status before writing.
+  //
+  // A client-side check against the live `codes` state still runs first as a free
+  // pre-filter: if the onSnapshot listener already shows this code taken, reject
+  // instantly with no network call and no reveal at all. This covers the common
+  // "someone beat you to it, and it's already visible in the list" case for free,
+  // leaving only genuine same-instant collisions to fall through to the rules
+  // check below.
+  //
+  // Deliberate trade-off, chosen over the phone with Por: the reveal now shows
+  // BEFORE the write is confirmed. If this device's write is the one the server
+  // rejects, reclaimAfterCollision (below) fires, apologizes, and immediately
+  // tries to hand the staff member a different available code instead of leaving
+  // them holding a code that silently was never theirs. This is worse for the
+  // rare loser of a genuine race (they briefly see a code, then have it corrected)
+  // in exchange for every normal Take feeling instant instead of waiting on a
+  // round trip that, most of the time, wasn't protecting against anything.
   const takeCode = async (id, name) => {
     if (takeBusy) return; // guard against double-tap while a request is in flight
     const code = takeModal?.code;
     setTakeBusy(true);
     setTakeError("");
-    // Optimistic update for instant table feedback (row shows "taken" right away),
-    // but the reveal screen itself waits for server confirmation (Fix #13). This
-    // avoids flashing "Your Code" for a code the user didn't actually win when two
-    // people tap Take on the same code at nearly the same instant.
-    setOptimistic(p => ({ ...p, [id]: { status: STATUS.TAKEN, takenBy: name, takenAt: Date.now() } }));
-    // FIX #6: Transaction ensures the code is still available before writing.
-    // If two users tap Take at the same time, only one wins and the other sees an error.
-    const attempt = runTransaction(db, async (tx) => {
-      const ref = doc(db, "codes", id);
-      const snap = await tx.get(ref);
-      if (!snap.exists() || snap.data().status !== STATUS.AVAILABLE) {
-        throw new Error("already_taken");
-      }
-      // FIX #7: serverTimestamp() writes the server's authoritative time, not the client clock
-      // takenDevice: the claiming browser's random device id (see getDeviceId), so a
-      // claim can be traced back to a device even if the typed name is unreliable or
-      // reused. Not a person or a fingerprint, same caveat as topupRequests.deviceId.
-      tx.update(ref, { status: STATUS.TAKEN, takenBy: name, takenAt: serverTimestamp(), takenDevice: getDeviceId() });
-    });
-    // FIX #14: runTransaction has no built-in timeout. A stalled connection, rules drift,
-    // or a slow round trip left the button on "Confirming..." forever with no error and no
-    // recovery except reloading. A bare Promise.race would "fix" that on-screen while the
-    // transaction kept running unseen: if it later landed, the code was claimed with the
-    // modal already closed and the staff member none the wiser, sometimes leading them to
-    // claim a second code thinking the first attempt failed. `timedOut` tracks whether the
-    // race's clock branch already won, so the settle handler below can react correctly
-    // instead of trusting a stale "still loading" UI state.
-    let timedOut = false;
-    const TAKE_TIMEOUT_MS = 12000;
-    const timer = new Promise((_, reject) => {
-      setTimeout(() => { timedOut = true; reject(new Error("timeout")); }, TAKE_TIMEOUT_MS);
-    });
-    // The attempt keeps running even if the timer wins the race below; this handler is what
-    // reconciles a late success or failure once the button has already moved on.
-    attempt.then(() => {
-      if (!timedOut) return;
-      // Landed after we told the staff member it timed out. The code is genuinely theirs now,
-      // so surface it rather than leaving it silently claimed under their name with no reveal.
-      log("take", `${name} took ${code} (confirmed late after a timeout)`);
-      alert(`Your code came through after all: ${code}\nMake sure to note it down.`);
-    }).catch(err => {
-      if (!timedOut) return;
-      // Lost the race after the timeout already rolled back the optimistic row and freed the
-      // button. Nothing claimed, nothing to reconcile; only log unexpected failures.
-      if (err?.message !== "already_taken") {
-        console.error("takeCode settled late after timeout:", err);
-      }
-    });
-    try {
-      await Promise.race([attempt, timer]);
-    } catch (err) {
-      // Rollback optimistic row and show error. Reveal screen was never shown, so nothing to hide
-      setOptimistic(p => { const n = { ...p }; delete n[id]; return n; });
+
+    // Free pre-filter: reject instantly if the live list already shows this taken,
+    // no network round-trip, no optimistic reveal shown for a code that's
+    // visibly already gone.
+    const liveRow = codes.find(c => c.id === id);
+    if (liveRow && liveRow.status !== STATUS.AVAILABLE) {
       setTakeBusy(false);
-      // Optional chaining: if err were ever null the catch block itself would throw,
-      // skipping setTakeBusy(false) and permanently freezing the Confirm button.
-      if (err?.message === "already_taken") {
-        setTakeError("Sorry, this code was just taken by someone else. Please choose another.");
-      } else if (err?.message === "timeout") {
-        setTakeError("This is taking too long. Check your connection. We'll let you know if it goes through.");
-      } else {
-        setTakeError("Something went wrong. Please try again.");
-      }
+      setTakeError("Sorry, this code was just taken by someone else. Please choose another.");
       return;
     }
-    // Success: clean up optimistic state (onSnapshot will sync the real data) and reveal
-    setOptimistic(p => { const n = { ...p }; delete n[id]; return n; });
+
+    setOptimistic(p => ({ ...p, [id]: { status: STATUS.TAKEN, takenBy: name, takenAt: Date.now() } }));
+
+    // Reveal immediately, before the write confirms. This is the actual speedup:
+    // the staff member sees their code without waiting on Firestore at all in the
+    // common case. reclaimAfterCollision corrects this if it turns out to be wrong.
     setStaffName("");
     setTakeBusy(false);
     setRevealedCode({ code, name });
-    log("take", `${name} took ${code}`);
+
+    const myDevice = getDeviceId();
+    updateDoc(doc(db, "codes", id), {
+      status: STATUS.TAKEN,
+      takenBy: name,
+      takenAt: serverTimestamp(),
+      takenDevice: myDevice,
+    }).then(() => {
+      setOptimistic(p => { const n = { ...p }; delete n[id]; return n; });
+      log("take", `${name} took ${code}`);
+    }).catch(err => {
+      // permission-denied here means someone else's write landed first and the
+      // server rejected ours, the rules-enforced equivalent of the old
+      // "already_taken" transaction failure, just discovered after an optimistic
+      // reveal instead of before one. Anything else is a genuine unexpected error
+      // (offline, rules drift) and is treated the same way: the reveal the staff
+      // member is looking at was never actually confirmed, so it has to be
+      // corrected either way.
+      setOptimistic(p => { const n = { ...p }; delete n[id]; return n; });
+      if (err?.code !== "permission-denied") {
+        console.error("takeCode failed after optimistic reveal:", err);
+      }
+      reclaimAfterCollision(code, name);
+    });
+  };
+
+  // Fires when an optimistic reveal turns out to have been wrong: this device's
+  // write was rejected, so the code on screen was never actually claimed by this
+  // staff member. Tells them plainly, then immediately tries to hand them a
+  // different available code rather than leaving them empty-handed after already
+  // seeing a "Your Code" screen. Rare by design (the pre-filter in takeCode catches
+  // the common case), but has to exist because the reveal is no longer gated on
+  // write confirmation.
+  const reclaimAfterCollision = (lostCode, name) => {
+    alert(`Sorry, "${lostCode}" was claimed by someone else at the same moment. Getting you a different code...`);
+    const next = codes.find(c => c.status === STATUS.AVAILABLE && c.code !== lostCode);
+    setRevealedCode(null);
+    if (!next) {
+      setTakeModal(null);
+      setTakeError("No other codes are available right now. Please try again shortly.");
+      return;
+    }
+    setTakeModal({ id: next.id, code: next.code });
+    takeCode(next.id, name);
   };
 
   // ── "We're out" ──
