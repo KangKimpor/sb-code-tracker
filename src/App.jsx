@@ -525,6 +525,19 @@ const styles = `
   .confirm-chip-label { font-size: 11px; color: var(--text-4); font-weight: 500; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
   .confirm-chip-code { font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--red); letter-spacing: 0.5px; margin-bottom: 4px; }
   .confirm-chip-by { font-size: 13px; color: var(--text-3); }
+  /* Release-only variant: solid orange fill matching .btn-pri.orange, so the box itself
+     reads as "this leads to the orange action" the same way the red chip reads as
+     "this leads to a destructive action" above. Scoped to .confirm-chip.release rather
+     than changing .confirm-chip directly, since that class is shared with the Staged
+     codes to remove (delete) confirmation, which should stay red/destructive-coded. */
+  .confirm-chip.release {
+    background: var(--orange);
+    border-color: var(--orange);
+  }
+  .confirm-chip.release .confirm-chip-label { color: rgba(255,255,255,0.75); }
+  .confirm-chip.release .confirm-chip-code,
+  .confirm-chip.release .confirm-chip-by,
+  .confirm-chip.release .confirm-chip-by strong { color: #fff; }
 
   /* Form */
   .f-label {
@@ -2348,7 +2361,7 @@ export default function App() {
               <div className="m-title">Release Code?</div>
               <div className="m-sub">This will make the code available again.</div>
             </div>
-            <div className="confirm-chip">
+            <div className="confirm-chip release">
               <div className="confirm-chip-label">Code to release</div>
               <div className="confirm-chip-code">{releaseConfirm.code}</div>
               {releaseConfirm.takenBy && (
