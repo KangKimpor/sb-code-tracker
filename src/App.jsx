@@ -367,6 +367,7 @@ const styles = `
     max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .t-time { font-size: 11.5px; color: var(--text-4); font-family: var(--font-mono); white-space: nowrap; }
+  .t-device { font-size: 10.5px; color: var(--text-4); font-family: var(--font-mono); white-space: nowrap; opacity: 0.75; }
   .t-act { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
   /* Badges */
@@ -2268,6 +2269,11 @@ export default function App() {
                         <div className="t-meta">
                           <span className="t-staff">{c.takenBy || "-"}</span>
                           {c.takenAt && <span className="t-time">{formatTime(c.takenAt)}</span>}
+                          {isAdmin && (
+                            <span className="t-device" title={c.takenDevice || "no device id (taken before this feature)"}>
+                              dev {c.takenDevice ? c.takenDevice.slice(-6) : "—"}
+                            </span>
+                          )}
                         </div>
                       )}
                       <div className="t-act">
