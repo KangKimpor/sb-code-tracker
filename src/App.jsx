@@ -220,6 +220,16 @@ const styles = `
   .hero-num {
     font-size: 30px; font-weight: 800; line-height: 1.1;
     letter-spacing: -1.1px; color: var(--green-strong);
+    /* Keyed on the avail/total pair in the JSX below, so React remounts this node
+       (and replays the animation) whenever the count actually changes, not on every
+       render. Gives the headline figure a small settle instead of silently jumping,
+       whether the change came from this device's own Take or someone else's via
+       onSnapshot. */
+    animation: numSettle 0.24s var(--ease-out) both;
+  }
+  @keyframes numSettle {
+    from { opacity: 0; transform: translateY(-3px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
   .hero-num.none { color: var(--text-3); }
   .hero-sub { font-size: 15px; color: var(--text-3); margin-top: 7px; letter-spacing: -0.2px; }
@@ -245,8 +255,11 @@ const styles = `
   .btn-topup.sent {
     background: var(--green-light); color: var(--green-dark);
     box-shadow: none;
+    /* Same one-shot pulse pattern as .btn-copy.copied: confirms the tap landed without
+       looping for as long as the sent state remains true. */
+    animation: copyPulse 0.32s var(--ease-spring);
   }
-  .topup-note { font-size: 12.5px; color: var(--text-4); margin-top: 9px; line-height: 1.45; }
+  .topup-note { font-size: 12.5px; color: var(--text-4); margin-top: 9px; line-height: 1.45; animation: rowIn 0.22s var(--ease-out) both; }
 
   /* ─── ADMIN ALERTS ─── */
   /* Advisory banners above the hero, admin only. Deliberately not styled as cards: they sit
@@ -268,6 +281,15 @@ const styles = `
   }
   .admin-alert.warn .admin-alert-ico { background: var(--orange); }
   .admin-alert.urgent .admin-alert-ico { background: var(--red); }
+  /* Slow, subtle breathing pulse on the urgent icon only (pool fully claimed), not the
+     warn tier (low stock, unstaged month). Urgent means "act now"; warn means "worth
+     knowing." Scoped to the small icon dot rather than the whole banner so it draws a
+     glance without becoming a distraction admin has to stare past all day. */
+  .admin-alert.urgent .admin-alert-ico { animation: alertPulse 2.2s ease-in-out infinite; }
+  @keyframes alertPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255,59,48,0.35); }
+    50%      { box-shadow: 0 0 0 6px rgba(255,59,48,0); }
+  }
   .admin-alert-main { flex: 1; min-width: 145px; }
   .admin-alert-title { font-size: 13.5px; font-weight: 700; letter-spacing: -0.2px; }
   .admin-alert.warn .admin-alert-title { color: var(--orange-dark); }
@@ -351,7 +373,11 @@ const styles = `
   }
   .t-row:hover { box-shadow: var(--sh); }
   .t-row.is-taken { box-shadow: none; background: rgba(255,255,255,0.6); }
-  .t-row.is-optimistic { opacity: 0.5; pointer-events: none; }
+  /* Transition (not just a static opacity value) so the drop to 0.5 is visible motion
+     rather than an instant cut, giving feedback that the tap registered while the write
+     is still in flight. Scoped to opacity only, so it never fights the row's own
+     hover box-shadow transition or the entrance animation's transform. */
+  .t-row.is-optimistic { opacity: 0.5; pointer-events: none; transition: opacity 0.22s var(--ease-out); }
 
   .t-code, .t-code-masked {
     flex: 1; min-width: 0;
@@ -408,6 +434,10 @@ const styles = `
     -webkit-tap-highlight-color: transparent;
   }
   .btn-release:hover { border-color: var(--red-mid); color: var(--red); background: var(--red-light); }
+  /* Was missing the tap-scale feedback .btn-take already had, the more common button
+     on this same row for non-admins. Admin taps this constantly during release sweeps,
+     so the same feedback parity matters here too. */
+  .btn-release:active { transform: scale(0.94); }
 
   .btn-taken-lock {
     font-size: 12.5px; font-weight: 600; color: var(--text-4);
@@ -968,6 +998,15 @@ const styles = `
     /* Soft drop shadow rather than the earlier glow, which read as a halo and made the
        block look like it was floating off the card. */
     box-shadow: 0 3px 10px rgba(52,199,89,0.24);
+    /* The payoff moment of the whole flow, so it gets its own entrance on top of the
+       modal's modalIn: the block pops in a beat after the modal settles rather than
+       just riding along with it. animation-fill-mode both plus a short delay is enough
+       to read as "revealed" without feeling like a separate, competing effect. */
+    animation: codePop 0.36s var(--ease-spring) 0.05s both;
+  }
+  @keyframes codePop {
+    from { opacity: 0; transform: scale(0.88); }
+    to   { opacity: 1; transform: scale(1); }
   }
   .reveal-sub { font-size: 15px; color: var(--text-3); margin-bottom: 22px; }
   .reveal-sub strong { color: var(--text); font-weight: 700; }
@@ -989,6 +1028,15 @@ const styles = `
   .btn-copy.copied {
     background: var(--green-light); color: var(--green-dark);
     border-color: var(--green-mid);
+    /* One-shot confirmation pulse when the state flips to copied. Runs once (no
+       infinite/alternate) so it reads as an acknowledgment, not a persistent state,
+       and does not replay while "copied" stays true for its 1.5s window. */
+    animation: copyPulse 0.32s var(--ease-spring);
+  }
+  @keyframes copyPulse {
+    0%   { transform: scale(1); }
+    45%  { transform: scale(1.045); }
+    100% { transform: scale(1); }
   }
 
   /* Narrow phones. This has to live here rather than in the SMALL PHONES block near the
@@ -2223,7 +2271,7 @@ export default function App() {
 
           {/* ── AVAILABILITY ── */}
           <div className="hero">
-            <div className={`hero-num${avail === 0 ? " none" : ""}`}>
+            <div key={`${avail}-${total}`} className={`hero-num${avail === 0 ? " none" : ""}`}>
               {total === 0 ? `No codes for ${monthLabel(nowMonth)}` : `${avail} of ${total} code${total === 1 ? "" : "s"} available`}
             </div>
             {total === 0 && (
@@ -2297,7 +2345,7 @@ export default function App() {
                           {c.takenAt && <span className="t-time">{formatTime(c.takenAt)}</span>}
                           {isAdmin && (
                             <span className="t-device" title={c.takenDevice || "no device id (taken before this feature)"}>
-                              dev {c.takenDevice ? c.takenDevice.slice(-6) : "—"}
+                              dev {c.takenDevice ? c.takenDevice.slice(-6) : "none"}
                             </span>
                           )}
                         </div>
