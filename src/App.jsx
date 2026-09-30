@@ -89,9 +89,13 @@ const styles = `
     --surface: #ffffff;
     --track: #e4e4e9;          /* segmented control + search field */
 
-    --surface-raised: rgba(255,255,255,0.9);
-    --surface-2: rgba(116,116,128,0.08);
-    --surface-3: rgba(116,116,128,0.12);
+    /* Opaque fills. Each was a translucent color composited over white, which is the
+       surface every tag, button and field here sits on. The tints also read correctly on
+       the page background, so no white-versus-bg split was needed. */
+    --surface-raised: #fdfdfe;
+    --surface-2: #f4f4f5;
+    --surface-3: #eeeef0;
+    --taken-row: #f8f8fa;
     --border: rgba(60,60,67,0.1);
     --border-mid: rgba(60,60,67,0.15);
     --text: #1c1c1e;
@@ -99,22 +103,40 @@ const styles = `
     --text-3: #636366;
     --text-4: #aeaeb2;
     --blue: #007aff;
-    --blue-light: rgba(0,122,255,0.1);
-    --blue-mid: rgba(0,122,255,0.18);
+    --blue-light: #e6f2ff;
+    --blue-mid: #d1e7ff;
+    /* Saturated blue for fills that carry white text: passes 4.5:1, the base blue does not. */
+    --blue-dark: #0071e3;
+    --blue-hover: #0068d6;
+    --blue-press: #005bbf;
     --green: #34c759;
-    --green-dark: #248a3d;
+    --green-dark: #1f7a37;    /* text on tints, and fills that carry white text: 4.5:1 or better */
+    --green-hover: #1a6b2e;
+    --green-press: #155a26;
     --green-strong: #1ea94d;   /* hero figure: passes 3:1 at large sizes */
 
-    --green-light: rgba(52,199,89,0.12);
-    --green-mid: rgba(52,199,89,0.22);
+    --green-light: #e7f8eb;
+    --green-mid: #d2f3da;
     --red: #ff3b30;
     --red-dark: #c0392b;
-    --red-light: rgba(255,59,48,0.1);
-    --red-mid: rgba(255,59,48,0.18);
+    --red-hover: #ad3225;
+    --red-press: #962a1f;
+    --red-light: #ffebea;
+    --red-mid: #ffdcda;
     --orange: #ff9500;
-    --orange-dark: #b26a00;
+    --orange-dark: #944f00;
+    --orange-hover: #834600;
+    --orange-press: #6f3b00;
 
-    --orange-light: rgba(255,149,0,0.1);
+    --orange-light: #fff4e6;
+    --orange-mid: #ffdfb2;
+    --purple: #af52de;
+    --purple-dark: #8e34c4;
+    --purple-light: #f7eefc;
+    --purple-mid: #e9cff6;
+    --disabled-bg: #e4e4e9;
+    --disabled-text: #8e8e93;
+    --on-dark-2: #bbbbbc;
     --r-xs: 8px;
     --r-sm: 10px;
     --r: 13px;
@@ -136,10 +158,6 @@ const styles = `
     --surface-recessed: #f2f2f5;
     /* Pressed fills. Opaque and darker than the resting fill, so a tap reads clearly now
        that the native tap highlight is off. */
-    --blue-press: #0062cc;
-    --green-press: #2ba349;
-    --red-press: #d9271c;
-    --orange-press: #d17b00;
     --ink-press: #000000;
     --track-press: #d6d6dc;
     --surface-press: #e9e9ee;
@@ -220,25 +238,25 @@ const styles = `
   }
   .pill-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
   .pill.month { background: var(--track); color: var(--text-3); }
-  .pill.live { background: var(--track); color: var(--green-strong); }
+  .pill.live { background: var(--green-light); border-color: var(--green-mid); color: var(--green-dark); }
   .pill.live .pill-dot { background: var(--green); animation: blink 2s infinite; }
-  .pill.admin { background: var(--red); border-color: var(--red); color: #fff; }
-  .pill.sched { background: rgba(175,82,222,0.10); border-color: rgba(175,82,222,0.28); color: #8e34c4; }
-  .pill.sched .pill-dot { background: #af52de; }
+  .pill.admin { background: var(--red-dark); border-color: var(--red-dark); color: #fff; }
+  .pill.sched { background: var(--purple-light); border-color: var(--purple-mid); color: var(--purple-dark); }
+  .pill.sched .pill-dot { background: var(--purple); }
   /* Staff waiting on a top-up. Orange rather than red: it is a request to act on, not
      a fault, and red is already spoken for by the admin pill sitting next to it. */
-  .pill.req { background: var(--orange-light); border-color: rgba(255,149,0,0.3); color: var(--orange-dark); }
+  .pill.req { background: var(--orange-light); border-color: var(--orange-mid); color: var(--orange-dark); }
   .pill.req .pill-dot { background: var(--orange); }
-  @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+  @keyframes blink { 0%,100%{background:var(--green);} 50%{background:var(--green-mid);} }
 
   .conn-banner {
-    background: var(--red-light); color: var(--red);
+    background: var(--red-light); color: var(--red-dark);
     border: 1px solid var(--red-mid); border-radius: var(--r-lg);
     padding: 11px 16px; font-size: 13.5px; text-align: center;
     margin-bottom: 14px;
   }
   .conn-banner button {
-    margin-left: 10px; background: none; border: 1px solid var(--red); color: var(--red);
+    margin-left: 10px; background: var(--surface); border: 1px solid var(--red-dark); color: var(--red-dark);
     border-radius: var(--r-xs); padding: 3px 11px; font-size: 12.5px; cursor: pointer;
     font-family: var(--font); font-weight: 600;
     transition: background 0.12s, color 0.12s, transform 0.12s;
@@ -278,20 +296,21 @@ const styles = `
      is the only action on the screen worth taking. */
   .btn-topup {
     width: 100%; margin-top: 16px;
-    background: var(--blue); color: #fff; border: none;
+    background: var(--blue-dark); color: #fff; border: none;
     border-radius: 14px; font-family: var(--font);
     font-size: 14.5px; font-weight: 600; padding: 12px;
     cursor: pointer; transition: background 0.12s, transform 0.12s, box-shadow 0.12s;
     box-shadow: 0 1px 4px rgba(0,122,255,0.3);
     -webkit-tap-highlight-color: transparent;
   }
-  @media (hover: hover) { .btn-topup:hover:not(:disabled) { background: #0069e0; box-shadow: 0 3px 12px rgba(0,122,255,0.34); } }
+  @media (hover: hover) { .btn-topup:hover:not(:disabled) { background: var(--blue-hover); box-shadow: 0 3px 12px rgba(0,122,255,0.34); } }
   .btn-topup:active:not(:disabled) { transform: scale(0.97); background: var(--blue-press); }
   .btn-topup:disabled { cursor: default; }
   /* Sent state stays legible rather than dimmed: it is a confirmation, and a greyed-out
      button reads as a failure to a person who just pressed it. */
   .btn-topup.sent {
     background: var(--green-light); color: var(--green-dark);
+    border: 1px solid var(--green-mid);
     box-shadow: none;
     /* Same one-shot pulse pattern as .btn-copy.copied: confirms the tap landed without
        looping for as long as the sent state remains true. */
@@ -308,17 +327,19 @@ const styles = `
     display: flex; align-items: center; gap: 11px; flex-wrap: wrap;
     padding: 12px 14px; border-radius: var(--r-lg);
     border: 1px solid transparent;
-    animation: rowIn 0.28s var(--ease-out) both;
+    animation: bannerIn 0.28s var(--ease-out) both;
   }
-  .admin-alert.warn { background: var(--orange-light); border-color: rgba(255,149,0,0.3); }
+  /* Motion only: a banner never passes through a translucent state. */
+  @keyframes bannerIn { from { transform: translateY(5px); } to { transform: translateY(0); } }
+  .admin-alert.warn { background: var(--orange-light); border-color: var(--orange-mid); }
   .admin-alert.urgent { background: var(--red-light); border-color: var(--red-mid); }
   .admin-alert-ico {
     width: 25px; height: 25px; border-radius: 50%; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
     font-size: 15px; font-weight: 700; color: #fff; line-height: 1;
   }
-  .admin-alert.warn .admin-alert-ico { background: var(--orange); }
-  .admin-alert.urgent .admin-alert-ico { background: var(--red); }
+  .admin-alert.warn .admin-alert-ico { background: var(--orange-dark); }
+  .admin-alert.urgent .admin-alert-ico { background: var(--red-dark); }
   /* Slow, subtle breathing pulse on the urgent icon only (pool fully claimed), not the
      warn tier (low stock, unstaged month). Urgent means "act now"; warn means "worth
      knowing." Scoped to the small icon dot rather than the whole banner so it draws a
@@ -359,7 +380,7 @@ const styles = `
     transition: background 0.12s, color 0.12s, transform 0.12s; white-space: nowrap;
     position: relative;
   }
-  .seg.active { background: var(--blue); color: #fff; box-shadow: 0 1px 5px rgba(0,122,255,0.35); }
+  .seg.active { background: var(--blue-dark); color: #fff; box-shadow: 0 1px 5px rgba(0,122,255,0.35); }
   @media (hover: hover) { .seg:not(.active):hover { color: var(--text); } }
   .seg:active { transform: scale(0.97); }
   .seg:not(.active):active { background: var(--track-press); }
@@ -411,12 +432,13 @@ const styles = `
     to   { opacity: 1; transform: translateY(0); }
   }
   @media (hover: hover) { .t-row:hover { box-shadow: var(--sh); } }
-  .t-row.is-taken { box-shadow: none; background: rgba(255,255,255,0.6); }
-  /* Transition (not just a static opacity value) so the drop to 0.5 is visible motion
-     rather than an instant cut, giving feedback that the tap registered while the write
-     is still in flight. Scoped to opacity only, so it never fights the row's own
-     hover box-shadow transition or the entrance animation's transform. */
-  .t-row.is-optimistic { opacity: 0.5; pointer-events: none; transition: opacity 0.22s var(--ease-out); }
+  .t-row.is-taken { box-shadow: none; background: var(--taken-row); }
+  /* Pending Take: a solid grey state instead of a fade, so the tap still reads as
+     registered while the write is in flight. */
+  .t-row.is-optimistic { background: var(--taken-row); pointer-events: none; transition: background 0.22s var(--ease-out); }
+  /* Solid grey in place of fading the row: the pending Take button is a disabled control. */
+  .t-row.is-optimistic .btn-take { background: var(--disabled-bg); color: var(--disabled-text); box-shadow: none; }
+  .t-row.is-optimistic .t-code { color: var(--text-4); }
 
   .t-code, .t-code-masked {
     flex: 1; min-width: 0;
@@ -434,7 +456,7 @@ const styles = `
     max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .t-time { font-size: 11.5px; color: var(--text-4); font-family: var(--font-mono); white-space: nowrap; }
-  .t-device { font-size: 10.5px; color: var(--text-4); font-family: var(--font-mono); white-space: nowrap; opacity: 0.75; }
+  .t-device { font-size: 10.5px; color: var(--text-4); font-family: var(--font-mono); white-space: nowrap; }
   .t-act { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
   /* Badges */
@@ -444,24 +466,24 @@ const styles = `
     padding: 2px 8px; border: 1px solid transparent;
   }
   .bdg-dot { width: 4px; height: 4px; border-radius: 50%; flex-shrink: 0; }
-  .bdg.avail { background: #e3f8e9; color: var(--green-dark); border-color: #b8ecc7; }
+  .bdg.avail { background: var(--green-light); color: var(--green-dark); border-color: var(--green-mid); }
   .bdg.avail .bdg-dot { background: var(--green-dark); }
-  .bdg.taken { background: #ffe6e4; color: var(--red); border-color: #ffc2bd; }
-  .bdg.taken .bdg-dot { background: var(--red); }
-  .bdg.sched { background: #f1e3fb; color: #8e34c4; border-color: #ddbdf3; }
-  .bdg.sched .bdg-dot { background: #af52de; }
-  .bdg.exp { background: var(--surface-recessed); color: var(--text-4); border-color: var(--border-mid); }
+  .bdg.taken { background: var(--red-light); color: var(--red-dark); border-color: var(--red-mid); }
+  .bdg.taken .bdg-dot { background: var(--red-dark); }
+  .bdg.sched { background: var(--purple-light); color: var(--purple-dark); border-color: var(--purple-mid); }
+  .bdg.sched .bdg-dot { background: var(--purple); }
+  .bdg.exp { background: var(--surface-recessed); color: var(--text-3); border-color: var(--border-mid); }
   .bdg.exp .bdg-dot { background: var(--text-4); }
 
   /* Row action buttons */
   .btn-take {
-    background: var(--blue); color: #fff; border: none;
+    background: var(--blue-dark); color: #fff; border: none;
     border-radius: 12px; font-family: var(--font);
     font-size: 15px; font-weight: 600; padding: 11px 26px;
     cursor: pointer; transition: background 0.12s, transform 0.12s, box-shadow 0.12s;
     box-shadow: 0 1px 4px rgba(0,122,255,0.32);
   }
-  @media (hover: hover) { .btn-take:hover { background: #0069e0; box-shadow: 0 3px 12px rgba(0,122,255,0.36); } }
+  @media (hover: hover) { .btn-take:hover { background: var(--blue-hover); box-shadow: 0 3px 12px rgba(0,122,255,0.36); } }
   .btn-take:active { transform: scale(0.97); background: var(--blue-press); }
 
   .btn-release {
@@ -470,14 +492,14 @@ const styles = `
     font-size: 13px; font-weight: 600; color: var(--text-3);
     padding: 9px 15px; cursor: pointer; transition: all 0.12s;
   }
-  @media (hover: hover) { .btn-release:hover { border-color: var(--red-mid); color: var(--red); background: var(--red-light); } }
+  @media (hover: hover) { .btn-release:hover { border-color: var(--red-mid); color: var(--red-dark); background: var(--red-light); } }
   /* Was missing the tap-scale feedback .btn-take already had, the more common button
      on this same row for non-admins. Admin taps this constantly during release sweeps,
      so the same feedback parity matters here too. */
   .btn-release:active { transform: scale(0.97); background: var(--track-press); }
 
   .btn-taken-lock {
-    font-size: 12.5px; font-weight: 600; color: var(--text-4);
+    font-size: 12.5px; font-weight: 600; color: var(--text-3);
     padding: 8px 13px; border-radius: 12px;
     background: var(--surface-2);
     display: inline-block; letter-spacing: -0.1px;
@@ -608,7 +630,7 @@ const styles = `
     margin-bottom: 4px;
   }
   .confirm-chip-label { font-size: 11px; color: var(--text-4); font-weight: 500; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
-  .confirm-chip-code { font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--red); letter-spacing: 0.5px; margin-bottom: 4px; }
+  .confirm-chip-code { font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--red-dark); letter-spacing: 0.5px; margin-bottom: 4px; }
   .confirm-chip-by { font-size: 13px; color: var(--text-3); }
   /* Release-only variant: solid orange fill matching .btn-pri.orange, so the box itself
      reads as "this leads to the orange action" the same way the red chip reads as
@@ -616,10 +638,10 @@ const styles = `
      than changing .confirm-chip directly, since that class is shared with the Staged
      codes to remove (delete) confirmation, which should stay red/destructive-coded. */
   .confirm-chip.release {
-    background: var(--orange);
-    border-color: var(--orange);
+    background: var(--orange-dark);
+    border-color: var(--orange-dark);
   }
-  .confirm-chip.release .confirm-chip-label { color: rgba(255,255,255,0.75); }
+  .confirm-chip.release .confirm-chip-label { color: var(--orange-light); }
   .confirm-chip.release .confirm-chip-code,
   .confirm-chip.release .confirm-chip-by,
   .confirm-chip.release .confirm-chip-by strong { color: #fff; }
@@ -676,9 +698,9 @@ const styles = `
     margin-bottom: 6px;
   }
   .pin-inp:focus { border-color: var(--blue); background: var(--surface); box-shadow: 0 0 0 3px var(--blue-light); }
-  .pin-err { font-size: 12px; font-weight: 500; color: var(--red); text-align: center; height: 18px; }
+  .pin-err { font-size: 12px; font-weight: 500; color: var(--red-dark); text-align: center; height: 18px; }
   .take-error {
-    font-size: 12.5px; color: var(--red); background: var(--red-light);
+    font-size: 12.5px; color: var(--red-dark); background: var(--red-light);
     border: 1px solid var(--red-mid); border-radius: var(--r-xs); padding: 8px 12px; margin-top: 4px;
   }
 
@@ -701,20 +723,26 @@ const styles = `
     color: #fff; padding: 11px; cursor: pointer;
     transition: all 0.12s;
   }
-  .btn-pri:disabled { opacity: 0.32; cursor: not-allowed; }
   .btn-pri:active:not(:disabled) { transform: scale(0.97); }
-  .btn-pri.blue { background: var(--blue); box-shadow: 0 1px 4px rgba(0,122,255,0.22); }
-  @media (hover: hover) { .btn-pri.blue:hover:not(:disabled) { background: #0070f0; box-shadow: 0 3px 10px rgba(0,122,255,0.3); } }
+  .btn-pri.blue { background: var(--blue-dark); box-shadow: 0 1px 4px rgba(0,122,255,0.22); }
+  @media (hover: hover) { .btn-pri.blue:hover:not(:disabled) { background: var(--blue-hover); box-shadow: 0 3px 10px rgba(0,122,255,0.3); } }
   .btn-pri.blue:active:not(:disabled) { background: var(--blue-press); }
-  .btn-pri.green { background: var(--green); box-shadow: 0 1px 4px rgba(52,199,89,0.22); }
-  @media (hover: hover) { .btn-pri.green:hover:not(:disabled) { background: #2db44e; box-shadow: 0 3px 10px rgba(52,199,89,0.3); } }
+  .btn-pri.green { background: var(--green-dark); box-shadow: 0 1px 4px rgba(52,199,89,0.22); }
+  @media (hover: hover) { .btn-pri.green:hover:not(:disabled) { background: var(--green-hover); box-shadow: 0 3px 10px rgba(52,199,89,0.3); } }
   .btn-pri.green:active:not(:disabled) { background: var(--green-press); }
-  .btn-pri.orange { background: var(--orange); box-shadow: 0 1px 4px rgba(255,149,0,0.22); }
-  @media (hover: hover) { .btn-pri.orange:hover:not(:disabled) { background: #e68a00; } }
+  .btn-pri.orange { background: var(--orange-dark); box-shadow: 0 1px 4px rgba(255,149,0,0.22); }
+  @media (hover: hover) { .btn-pri.orange:hover:not(:disabled) { background: var(--orange-hover); } }
   .btn-pri.orange:active:not(:disabled) { background: var(--orange-press); }
-  .btn-pri.red { background: var(--red); box-shadow: 0 1px 4px rgba(255,59,48,0.22); }
-  @media (hover: hover) { .btn-pri.red:hover:not(:disabled) { background: #e0352a; } }
+  .btn-pri.red { background: var(--red-dark); box-shadow: 0 1px 4px rgba(255,59,48,0.22); }
+  @media (hover: hover) { .btn-pri.red:hover:not(:disabled) { background: var(--red-hover); } }
   .btn-pri.red:active:not(:disabled) { background: var(--red-press); }
+  /* Disabled is a solid grey fill with solid grey text, never a fade. Placed after every
+     color variant: they share specificity with this rule, so order decides. */
+  .btn-pri:disabled, .btn-pri.blue:disabled, .btn-pri.green:disabled,
+  .btn-pri.orange:disabled, .btn-pri.red:disabled {
+    background: var(--disabled-bg); color: var(--disabled-text);
+    box-shadow: none; cursor: not-allowed;
+  }
 
   /* ─── CODE MANAGER: grouped iOS-style list ─── */
   /* Apple settings pattern: a small uppercase label sits above a group, the group itself
@@ -776,7 +804,7 @@ const styles = `
      so the whole sub-screen still opens with the same top inset as the root list. */
   .mgr-back {
     display: flex; align-items: center; gap: 6px;
-    background: none; border: none; color: var(--blue);
+    background: none; border: none; color: var(--blue-dark);
     font-family: var(--font); font-size: 15px; font-weight: 500;
     padding: 0 0 16px; cursor: pointer;
     transition: color 0.12s, transform 0.12s;
@@ -795,9 +823,9 @@ const styles = `
     width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
     font-size: 14px; font-weight: 700; color: #fff; line-height: 1;
-    background: var(--orange);
+    background: var(--orange-dark);
   }
-  .mgr-alert-ico.muted { background: var(--text-4); }
+  .mgr-alert-ico.muted { background: var(--text-3); }
   .mgr-alert-main { flex: 1; min-width: 160px; }
   .mgr-alert-title { font-size: 13.5px; font-weight: 600; color: var(--orange-dark); }
   .mgr-alert-title.muted { color: var(--text-2); }
@@ -814,7 +842,7 @@ const styles = `
 
   /* Drop scheduling */
   .drop-note { font-size: 12px; color: var(--text-4); margin-top: 8px; line-height: 1.45; }
-  .drop-note.sched { color: #8e34c4; font-weight: 500; }
+  .drop-note.sched { color: var(--purple-dark); font-weight: 500; }
 
   .sched-month { font-size: 13.5px; font-weight: 600; color: var(--text); }
   .sched-meta { font-size: 11.5px; color: var(--text-4); }
@@ -882,7 +910,7 @@ const styles = `
   }
   @media (hover: hover) { .btn-bulk:hover:not(:disabled) { background: var(--surface-3); color: var(--text-2); } }
   .btn-bulk:active:not(:disabled) { transform: scale(0.97); background: var(--track-press); color: var(--text-2); }
-  .btn-bulk:disabled { opacity: 0.35; cursor: default; }
+  .btn-bulk:disabled { background: var(--disabled-bg); border-color: var(--disabled-bg); color: var(--disabled-text); cursor: default; }
 
   /* Code list */
   .code-list {
@@ -911,7 +939,7 @@ const styles = `
     flex-shrink: 0; background: var(--surface);
     transition: all 0.14s var(--ease-spring);
   }
-  .cl-item.sel .cl-check { background: var(--blue); border-color: var(--blue); }
+  .cl-item.sel .cl-check { background: var(--blue-dark); border-color: var(--blue-dark); }
   .cl-check-ico { display: none; }
   .cl-item.sel .cl-check-ico { display: block; }
 
@@ -922,7 +950,7 @@ const styles = `
     padding: 1px 6px; border-radius: 4px; flex-shrink: 0;
   }
   .cl-tag.sched { background: var(--text); color: #fff; }
-  .cl-tag.exp { background: var(--surface-recessed); color: var(--text-4); border: 1px solid var(--border-mid); }
+  .cl-tag.exp { background: var(--surface-recessed); color: var(--text-3); border: 1px solid var(--border-mid); }
   .cl-meta { font-size: 12px; color: var(--text-3); }
 
   /* Status: a dot plus label, no filled pill. Apple's list-row convention for state
@@ -943,7 +971,7 @@ const styles = `
     font-size: 11.5px; color: var(--text-4);
     padding: 4px 10px; cursor: pointer; transition: all 0.12s; flex-shrink: 0;
   }
-  @media (hover: hover) { .btn-del:hover { border-color: var(--red); color: #fff; background: var(--red); } }
+  @media (hover: hover) { .btn-del:hover { border-color: var(--red-dark); color: #fff; background: var(--red-dark); } }
   .btn-del:active { transform: scale(0.97); border-color: var(--red-press); color: #fff; background: var(--red-press); }
 
   .list-empty { padding: 24px; text-align: center; color: var(--text-4); font-size: 13px; }
@@ -958,7 +986,7 @@ const styles = `
   .btn-textlink {
     background: none; border: none; padding: 0;
     font-family: var(--font); font-size: 12.5px; font-weight: 500;
-    color: var(--blue); cursor: pointer; transition: color 0.12s, transform 0.12s;
+    color: var(--blue-dark); cursor: pointer; transition: color 0.12s, transform 0.12s;
   }
   @media (hover: hover) { .btn-textlink:hover { color: var(--blue-press); } }
   .btn-textlink:active { color: var(--blue-press); transform: scale(0.97); }
@@ -970,15 +998,15 @@ const styles = `
   }
   .sel-count { font-size: 12.5px; font-weight: 600; color: #fff; }
   .sel-toolbar-actions { display: flex; align-items: center; gap: 14px; }
-  .sel-toolbar .btn-textlink { color: rgba(255,255,255,0.7); }
+  .sel-toolbar .btn-textlink { color: var(--on-dark-2); }
   @media (hover: hover) { .sel-toolbar .btn-textlink:hover { color: #fff; } }
   .sel-toolbar .btn-textlink:active { color: #fff; transform: scale(0.97); }
   .sel-toolbar .btn-del-sel {
-    background: var(--red); color: #fff; border: none;
+    background: var(--red-dark); color: #fff; border: none;
     border-radius: 6px; font-family: var(--font); font-size: 11.5px;
     font-weight: 600; padding: 5px 12px; cursor: pointer; transition: all 0.12s;
   }
-  @media (hover: hover) { .sel-toolbar .btn-del-sel:hover { background: var(--red-dark); } }
+  @media (hover: hover) { .sel-toolbar .btn-del-sel:hover { background: var(--red-hover); } }
   .sel-toolbar .btn-del-sel:active { transform: scale(0.97); background: var(--red-press); }
 
   /* Activity log */
@@ -995,10 +1023,10 @@ const styles = `
   .act-dot.add  { background: var(--green); }
   .act-dot.take { background: var(--blue); }
   .act-dot.release { background: var(--orange); }
-  .act-dot.delete, .act-dot.bulk { background: var(--red); }
+  .act-dot.delete, .act-dot.bulk { background: var(--red-dark); }
   .act-dot.export { background: #5ac8fa; }
   .act-dot.request { background: var(--orange); }
-  .act-dot.schedule { background: #af52de; }
+  .act-dot.schedule { background: var(--purple); }
   .act-dot.expire { background: var(--text-4); }
   .act-text { font-size: 12px; color: var(--text-3); flex: 1; line-height: 1.4; }
   .act-text strong { color: var(--text); font-weight: 600; }
@@ -1029,12 +1057,12 @@ const styles = `
      maintenance action, not something to compete visually with Export CSV. */
   .btn-clear-logs {
     width: 100%; display: flex; align-items: center; justify-content: center; gap: 7px;
-    background: var(--surface); border: 1px solid var(--border-mid); color: var(--red);
+    background: var(--surface); border: 1px solid var(--border-mid); color: var(--red-dark);
     border-radius: var(--r-sm); font-family: var(--font);
     font-size: 13.5px; font-weight: 600;
     padding: 12px; cursor: pointer; transition: all 0.12s; margin-top: 8px;
   }
-  @media (hover: hover) { .btn-clear-logs:hover { background: var(--red); border-color: var(--red); color: #fff; } }
+  @media (hover: hover) { .btn-clear-logs:hover { background: var(--red-dark); border-color: var(--red-dark); color: #fff; } }
   .btn-clear-logs:active { transform: scale(0.97); background: var(--red-press); border-color: var(--red-press); color: #fff; }
 
   /* ─── CODE REVEAL (inside Take modal) ─── */
