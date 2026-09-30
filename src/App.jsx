@@ -75,8 +75,14 @@ const ADMIN_PIN = import.meta.env.VITE_ADMIN_PIN || "782945"; // CHANGE THIS or 
 const STATUS = { AVAILABLE: "available", TAKEN: "taken" };
 
 const styles = `
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html {
+    -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation;
+    overscroll-behavior-y: none;
+    scrollbar-gutter: stable;   /* reserve the scrollbar so locking scroll never shifts the page */
+  }
+  /* Lock the page behind any open modal. The gutter above stops the layout jump. */
+  html:has(.overlay), body:has(.overlay) { overflow: hidden; }
 
   :root {
     --bg: #eeeef2;
@@ -128,6 +134,15 @@ const styles = `
        Scoped to .mgr-list rather than replacing --surface-2 globally, since --surface-2
        is still load-bearing for the other five modals this task does not touch. */
     --surface-recessed: #f2f2f5;
+    /* Pressed fills. Opaque and darker than the resting fill, so a tap reads clearly now
+       that the native tap highlight is off. */
+    --blue-press: #0062cc;
+    --green-press: #2ba349;
+    --red-press: #d9271c;
+    --orange-press: #d17b00;
+    --ink-press: #000000;
+    --track-press: #d6d6dc;
+    --surface-press: #e9e9ee;
   }
 
   body {
@@ -136,7 +151,8 @@ const styles = `
     font-family: var(--font);
     font-size: 16px;
     touch-action: manipulation;
-    min-height: 100vh;
+    overscroll-behavior-y: none;
+    min-height: 100vh; min-height: 100svh; min-height: 100dvh;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     letter-spacing: -0.1px;
@@ -144,15 +160,28 @@ const styles = `
 
   /* No double-tap zoom and no 300ms tap delay on anything tappable. */
   button, select, input, textarea, label, a,
-  .t-row, .cl-item, .mgr-row, .mgr-row-static, .pill, .bdg, .seg, .overlay, .modal {
+  .t-row, .cl-item, .mgr-row, .mgr-row-static, .pill, .bdg, .seg, .modal {
     touch-action: manipulation;
   }
 
+  /* Chrome, not content: UI text cannot be long-press selected and shows no iOS callout.
+     Code values and form fields stay selectable so a code can still be copied. */
+  button, label, h1, h2, h3, .pill, .bdg, .t-row, .cl-item, .mgr-row, .mgr-row-static,
+  .mgr-alert-row, .act-item, .bdc-item, .hero-num, .hero-sub, .brand-name, .m-title, .m-sub,
+  .logo-img {
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  .reveal-code, .t-code, .t-code-masked, .cl-name, .bdc-code,
+  input, textarea, select {
+    -webkit-user-select: text; user-select: text;
+  }
+
   .page {
-    min-height: 100vh;
+    min-height: 100vh; min-height: 100svh; min-height: 100dvh;
     display: flex; flex-direction: column;
     width: 100%; max-width: 560px; margin: 0 auto;
-    padding: 0 16px 44px;
+    padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px))
+             calc(44px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
     text-align: left;   /* index.css centres #root */
   }
 
@@ -167,11 +196,10 @@ const styles = `
     background: none; border: none; padding: 0;
     flex-shrink: 0; cursor: pointer; font: inherit;
     display: flex; align-items: center;
-    transition: transform 0.18s var(--ease-spring), opacity 0.15s;
-    -webkit-tap-highlight-color: transparent;
+    transition: transform 0.12s var(--ease-out), background 0.12s;
   }
-  .logo-wrap:hover { transform: scale(1.05); }
-  .logo-wrap:active { transform: scale(0.94); opacity: 0.8; }
+  @media (hover: hover) { .logo-wrap:hover { transform: scale(1.05); } }
+  .logo-wrap:active { transform: scale(0.97); background: var(--track-press); border-radius: 12px; }
 
   /* Height-driven with auto width, so /logo.png can be swapped for a wider
      wordmark version without touching the layout. */
@@ -213,7 +241,9 @@ const styles = `
     margin-left: 10px; background: none; border: 1px solid var(--red); color: var(--red);
     border-radius: var(--r-xs); padding: 3px 11px; font-size: 12.5px; cursor: pointer;
     font-family: var(--font); font-weight: 600;
+    transition: background 0.12s, color 0.12s, transform 0.12s;
   }
+  .conn-banner button:active { transform: scale(0.97); background: var(--red-press); border-color: var(--red-press); color: #fff; }
 
   .main { flex: 1; display: flex; flex-direction: column; }
 
@@ -251,12 +281,12 @@ const styles = `
     background: var(--blue); color: #fff; border: none;
     border-radius: 14px; font-family: var(--font);
     font-size: 14.5px; font-weight: 600; padding: 12px;
-    cursor: pointer; transition: background 0.16s, transform 0.16s, box-shadow 0.16s;
+    cursor: pointer; transition: background 0.12s, transform 0.12s, box-shadow 0.12s;
     box-shadow: 0 1px 4px rgba(0,122,255,0.3);
     -webkit-tap-highlight-color: transparent;
   }
-  .btn-topup:hover:not(:disabled) { background: #0069e0; box-shadow: 0 3px 12px rgba(0,122,255,0.34); }
-  .btn-topup:active:not(:disabled) { transform: scale(0.985); }
+  @media (hover: hover) { .btn-topup:hover:not(:disabled) { background: #0069e0; box-shadow: 0 3px 12px rgba(0,122,255,0.34); } }
+  .btn-topup:active:not(:disabled) { transform: scale(0.97); background: var(--blue-press); }
   .btn-topup:disabled { cursor: default; }
   /* Sent state stays legible rather than dimmed: it is a confirmation, and a greyed-out
      button reads as a failure to a person who just pressed it. */
@@ -308,12 +338,11 @@ const styles = `
     background: var(--surface); border: 1px solid var(--border-mid);
     border-radius: 10px; font-family: var(--font);
     font-size: 12.5px; font-weight: 600; color: var(--text-2);
-    padding: 8px 14px; cursor: pointer; transition: all 0.15s;
+    padding: 8px 14px; cursor: pointer; transition: all 0.12s;
     flex-shrink: 0; white-space: nowrap;
-    -webkit-tap-highlight-color: transparent;
   }
-  .admin-alert-btn:hover { background: var(--text); color: #fff; border-color: var(--text); }
-  .admin-alert-btn:active { transform: scale(0.97); }
+  @media (hover: hover) { .admin-alert-btn:hover { background: var(--text); color: #fff; border-color: var(--text); } }
+  .admin-alert-btn:active { transform: scale(0.97); background: var(--text-2); color: #fff; border-color: var(--text-2); }
 
   /* ─── TOOLBAR ─── */
   .toolbar { display: flex; flex-direction: column; margin-bottom: 16px; }
@@ -327,11 +356,14 @@ const styles = `
     flex: 1; background: none; border: none; border-radius: 11px;
     font-family: var(--font); font-size: 14.5px; font-weight: 600;
     color: var(--text-2); padding: 9px 6px; cursor: pointer;
-    transition: background 0.18s, color 0.18s; white-space: nowrap;
-    -webkit-tap-highlight-color: transparent; position: relative;
+    transition: background 0.12s, color 0.12s, transform 0.12s; white-space: nowrap;
+    position: relative;
   }
   .seg.active { background: var(--blue); color: #fff; box-shadow: 0 1px 5px rgba(0,122,255,0.35); }
-  .seg:not(.active):hover { color: var(--text); }
+  @media (hover: hover) { .seg:not(.active):hover { color: var(--text); } }
+  .seg:active { transform: scale(0.97); }
+  .seg:not(.active):active { background: var(--track-press); }
+  .seg.active:active { background: var(--blue-press); }
   /* Hairline between two inactive segments */
   .seg:not(.active) + .seg:not(.active)::before {
     content: ""; position: absolute; left: -2px; top: 24%; bottom: 24%;
@@ -344,11 +376,10 @@ const styles = `
     background: var(--text); color: #fff; border: none;
     border-radius: 14px; font-family: var(--font);
     font-size: 14px; font-weight: 600; padding: 12px;
-    cursor: pointer; transition: background 0.16s, transform 0.16s;
-    -webkit-tap-highlight-color: transparent;
+    cursor: pointer; transition: background 0.12s, transform 0.12s;
   }
-  .btn-mgr:hover { background: #3a3a3c; }
-  .btn-mgr:active { transform: scale(0.985); }
+  @media (hover: hover) { .btn-mgr:hover { background: #3a3a3c; } }
+  .btn-mgr:active { transform: scale(0.97); background: var(--ink-press); }
 
   /* ─── CODE LIST ─── */
   /* Each code is its own card. The .card element is kept as a transparent wrapper
@@ -379,7 +410,7 @@ const styles = `
     from { opacity: 0; transform: translateY(5px); }
     to   { opacity: 1; transform: translateY(0); }
   }
-  .t-row:hover { box-shadow: var(--sh); }
+  @media (hover: hover) { .t-row:hover { box-shadow: var(--sh); } }
   .t-row.is-taken { box-shadow: none; background: rgba(255,255,255,0.6); }
   /* Transition (not just a static opacity value) so the drop to 0.5 is visible motion
      rather than an instant cut, giving feedback that the tap registered while the write
@@ -427,25 +458,23 @@ const styles = `
     background: var(--blue); color: #fff; border: none;
     border-radius: 12px; font-family: var(--font);
     font-size: 15px; font-weight: 600; padding: 11px 26px;
-    cursor: pointer; transition: background 0.16s, transform 0.16s, box-shadow 0.16s;
+    cursor: pointer; transition: background 0.12s, transform 0.12s, box-shadow 0.12s;
     box-shadow: 0 1px 4px rgba(0,122,255,0.32);
-    -webkit-tap-highlight-color: transparent;
   }
-  .btn-take:hover { background: #0069e0; box-shadow: 0 3px 12px rgba(0,122,255,0.36); }
-  .btn-take:active { transform: scale(0.96); }
+  @media (hover: hover) { .btn-take:hover { background: #0069e0; box-shadow: 0 3px 12px rgba(0,122,255,0.36); } }
+  .btn-take:active { transform: scale(0.97); background: var(--blue-press); }
 
   .btn-release {
     background: none; border: 1px solid var(--border-mid);
     border-radius: 12px; font-family: var(--font);
     font-size: 13px; font-weight: 600; color: var(--text-3);
-    padding: 9px 15px; cursor: pointer; transition: all 0.16s;
-    -webkit-tap-highlight-color: transparent;
+    padding: 9px 15px; cursor: pointer; transition: all 0.12s;
   }
-  .btn-release:hover { border-color: var(--red-mid); color: var(--red); background: var(--red-light); }
+  @media (hover: hover) { .btn-release:hover { border-color: var(--red-mid); color: var(--red); background: var(--red-light); } }
   /* Was missing the tap-scale feedback .btn-take already had, the more common button
      on this same row for non-admins. Admin taps this constantly during release sweeps,
      so the same feedback parity matters here too. */
-  .btn-release:active { transform: scale(0.94); }
+  .btn-release:active { transform: scale(0.97); background: var(--track-press); }
 
   .btn-taken-lock {
     font-size: 12.5px; font-weight: 600; color: var(--text-4);
@@ -483,7 +512,10 @@ const styles = `
 
   /* ─── SMALL PHONES ─── */
   @media (max-width: 420px) {
-    .page { padding: 0 12px 36px; }
+    .page {
+      padding: env(safe-area-inset-top, 0px) max(12px, env(safe-area-inset-right, 0px))
+               calc(36px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+    }
     .topbar { gap: 11px; padding: 18px 2px 16px; }
     .logo-wrap { height: 40px; }
     .brand-name { font-size: 18.5px; }
@@ -504,11 +536,20 @@ const styles = `
   }
 
   /* ─── OVERLAY / MODAL ─── */
+  /* Sized to the visible viewport (main.jsx keeps --vv-h and --vv-top current), so the
+     on-screen keyboard never covers a centred modal. The 100dvh lines are the fallback
+     for the moment before that script has run. */
   .overlay {
-    position: fixed; inset: 0;
+    position: fixed; left: 0; right: 0;
+    top: var(--vv-top, 0px);
+    height: 100svh; height: 100dvh; height: var(--vv-h, 100dvh);
     background: rgba(0,0,0,0.5);
     display: flex; align-items: center; justify-content: center;
-    z-index: 100; padding: 20px;
+    z-index: 100;
+    padding: max(20px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-right, 0px))
+             max(20px, env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
+    overscroll-behavior: contain;
+    touch-action: none;   /* nothing behind a modal pans; scrollers inside it still do */
     animation: fadeOvr 0.18s ease;
   }
   @keyframes fadeOvr { from{opacity:0;} to{opacity:1;} }
@@ -518,13 +559,16 @@ const styles = `
     border-radius: var(--r-2xl);
     padding: 26px 24px;
     width: 100%; max-width: 390px;
+    max-height: 100%;
+    overflow-y: auto; overscroll-behavior: contain;
     box-shadow: var(--sh-xl);
     border: 1px solid var(--border);
     animation: modalIn 0.26s var(--ease-spring);
   }
   .modal.wide {
     max-width: 520px;
-    max-height: 88vh;
+    max-height: 88svh; max-height: 88dvh;
+    max-height: min(100%, 88dvh);
     overflow-y: auto;
     padding-right: 20px;
   }
@@ -591,6 +635,7 @@ const styles = `
     border: 1.5px solid var(--border-mid);
     border-radius: var(--r-sm); padding: 9px 14px;
     font-family: var(--font); font-size: 16px; color: var(--text);
+    min-height: 44px;
     outline: none; transition: all 0.16s; -webkit-appearance: none;
   }
   .f-input:focus { border-color: var(--blue); background: var(--surface); box-shadow: 0 0 0 3px var(--blue-light); }
@@ -610,6 +655,7 @@ const styles = `
     border: 1.5px solid var(--border-mid);
     border-radius: var(--r-sm); padding: 9px 34px 9px 14px;
     font-family: var(--font); font-size: 16px; font-weight: 500; color: var(--text);
+    min-height: 44px;
     outline: none; cursor: pointer; transition: all 0.16s;
     -webkit-appearance: none; -moz-appearance: none; appearance: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238e8e93' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
@@ -644,28 +690,31 @@ const styles = `
     border: 1px solid var(--border-mid);
     border-radius: var(--r-sm); font-family: var(--font);
     font-size: 14px; font-weight: 600; color: var(--text-3);
-    padding: 11px; cursor: pointer; transition: all 0.15s;
-    -webkit-tap-highlight-color: transparent;
+    padding: 11px; cursor: pointer; transition: all 0.12s;
   }
-  .btn-sec:hover { background: var(--surface-3); color: var(--text-2); }
-  .btn-sec:active { transform: scale(0.98); }
+  @media (hover: hover) { .btn-sec:hover { background: var(--surface-3); color: var(--text-2); } }
+  .btn-sec:active { transform: scale(0.97); background: var(--track-press); color: var(--text-2); }
 
   .btn-pri {
     flex: 1; border: none; border-radius: var(--r-sm);
     font-family: var(--font); font-size: 14px; font-weight: 600;
     color: #fff; padding: 11px; cursor: pointer;
-    transition: all 0.15s; -webkit-tap-highlight-color: transparent;
+    transition: all 0.12s;
   }
   .btn-pri:disabled { opacity: 0.32; cursor: not-allowed; }
-  .btn-pri:active:not(:disabled) { transform: scale(0.98); }
+  .btn-pri:active:not(:disabled) { transform: scale(0.97); }
   .btn-pri.blue { background: var(--blue); box-shadow: 0 1px 4px rgba(0,122,255,0.22); }
-  .btn-pri.blue:hover:not(:disabled) { background: #0070f0; box-shadow: 0 3px 10px rgba(0,122,255,0.3); }
+  @media (hover: hover) { .btn-pri.blue:hover:not(:disabled) { background: #0070f0; box-shadow: 0 3px 10px rgba(0,122,255,0.3); } }
+  .btn-pri.blue:active:not(:disabled) { background: var(--blue-press); }
   .btn-pri.green { background: var(--green); box-shadow: 0 1px 4px rgba(52,199,89,0.22); }
-  .btn-pri.green:hover:not(:disabled) { background: #2db44e; box-shadow: 0 3px 10px rgba(52,199,89,0.3); }
+  @media (hover: hover) { .btn-pri.green:hover:not(:disabled) { background: #2db44e; box-shadow: 0 3px 10px rgba(52,199,89,0.3); } }
+  .btn-pri.green:active:not(:disabled) { background: var(--green-press); }
   .btn-pri.orange { background: var(--orange); box-shadow: 0 1px 4px rgba(255,149,0,0.22); }
-  .btn-pri.orange:hover:not(:disabled) { background: #e68a00; }
+  @media (hover: hover) { .btn-pri.orange:hover:not(:disabled) { background: #e68a00; } }
+  .btn-pri.orange:active:not(:disabled) { background: var(--orange-press); }
   .btn-pri.red { background: var(--red); box-shadow: 0 1px 4px rgba(255,59,48,0.22); }
-  .btn-pri.red:hover:not(:disabled) { background: #e0352a; }
+  @media (hover: hover) { .btn-pri.red:hover:not(:disabled) { background: #e0352a; } }
+  .btn-pri.red:active:not(:disabled) { background: var(--red-press); }
 
   /* ─── CODE MANAGER: grouped iOS-style list ─── */
   /* Apple settings pattern: a small uppercase label sits above a group, the group itself
@@ -708,8 +757,8 @@ const styles = `
     font-family: var(--font); -webkit-tap-highlight-color: transparent;
     transition: background 0.12s;
   }
-  .mgr-row:hover { background: var(--bg); }
-  .mgr-row:active { background: var(--track); }
+  @media (hover: hover) { .mgr-row:hover { background: var(--bg); } }
+  .mgr-row:active { background: var(--track-press); }
   .mgr-row + .mgr-row { border-top: 1px solid var(--border); }
   .mgr-row-title { font-size: 14.5px; font-weight: 500; color: var(--text); }
   .mgr-row-trail {
@@ -729,9 +778,11 @@ const styles = `
     display: flex; align-items: center; gap: 6px;
     background: none; border: none; color: var(--blue);
     font-family: var(--font); font-size: 15px; font-weight: 500;
-    padding: 0 0 16px; cursor: pointer; -webkit-tap-highlight-color: transparent;
+    padding: 0 0 16px; cursor: pointer;
+    transition: color 0.12s, transform 0.12s;
   }
-  .mgr-back:hover { opacity: 0.7; }
+  @media (hover: hover) { .mgr-back:hover { color: var(--blue-press); } }
+  .mgr-back:active { color: var(--blue-press); transform: scale(0.97); }
 
   /* Advisory rows: Top-up Requests, Expired Codes, No Drop Month. Same opaque .mgr-list
      shell as everything else, tinted only on the icon and title so the group still reads
@@ -755,10 +806,11 @@ const styles = `
     background: var(--bg); border: 1px solid var(--border-mid);
     border-radius: var(--r-xs); font-family: var(--font);
     font-size: 12px; font-weight: 600; color: var(--text-2);
-    padding: 6px 13px; cursor: pointer; transition: all 0.15s;
+    padding: 6px 13px; cursor: pointer; transition: all 0.12s;
     flex-shrink: 0; white-space: nowrap;
   }
-  .mgr-alert-btn:hover { background: var(--track); }
+  @media (hover: hover) { .mgr-alert-btn:hover { background: var(--track); } }
+  .mgr-alert-btn:active { transform: scale(0.97); background: var(--track-press); }
 
   /* Drop scheduling */
   .drop-note { font-size: 12px; color: var(--text-4); margin-top: 8px; line-height: 1.45; }
@@ -778,12 +830,14 @@ const styles = `
     flex: 1; background: none; border: none; border-radius: 7px;
     font-family: var(--font); font-size: 13px; font-weight: 500;
     color: var(--text-3); padding: 7px 4px; cursor: pointer;
-    transition: all 0.15s; -webkit-tap-highlight-color: transparent;
+    transition: all 0.12s;
   }
   .seg-ctrl button.active {
     background: var(--surface); color: var(--text);
     font-weight: 600; box-shadow: var(--sh-sm);
   }
+  .seg-ctrl button:not(.seg):active { transform: scale(0.97); background: var(--track-press); }
+  .seg-ctrl button.active:not(.seg):active { background: var(--surface-press); }
 
   /* Narrow phones. Lives here rather than the SMALL PHONES block near the top of the
      sheet: that block sits above every rule these override, and a media query adds no
@@ -802,11 +856,10 @@ const styles = `
     background: var(--text); color: #fff; border: none;
     border-radius: var(--r-sm); font-family: var(--font);
     font-size: 13px; font-weight: 600; padding: 10px 16px;
-    cursor: pointer; transition: all 0.15s; flex-shrink: 0;
-    -webkit-tap-highlight-color: transparent;
+    cursor: pointer; transition: all 0.12s; flex-shrink: 0;
   }
-  .btn-add:hover { background: #3a3a3c; }
-  .btn-add:active { transform: scale(0.97); }
+  @media (hover: hover) { .btn-add:hover { background: #3a3a3c; } }
+  .btn-add:active { transform: scale(0.97); background: var(--ink-press); }
 
   .bulk-ta {
     width: 100%; background: var(--surface-recessed);
@@ -825,14 +878,15 @@ const styles = `
     border: 1px solid var(--border-mid); border-radius: var(--r-sm);
     font-family: var(--font); font-size: 13px; font-weight: 600;
     color: var(--text-3); padding: 10px; cursor: pointer;
-    transition: all 0.15s;
+    transition: all 0.12s;
   }
-  .btn-bulk:hover:not(:disabled) { background: var(--surface-3); color: var(--text-2); }
+  @media (hover: hover) { .btn-bulk:hover:not(:disabled) { background: var(--surface-3); color: var(--text-2); } }
+  .btn-bulk:active:not(:disabled) { transform: scale(0.97); background: var(--track-press); color: var(--text-2); }
   .btn-bulk:disabled { opacity: 0.35; cursor: default; }
 
   /* Code list */
   .code-list {
-    max-height: 220px; overflow-y: auto;
+    max-height: 220px; overflow-y: auto; overscroll-behavior: contain;
     border: 1px solid var(--border); border-radius: var(--r-sm);
   }
   .code-list::-webkit-scrollbar { width: 4px; }
@@ -845,8 +899,10 @@ const styles = `
     user-select: none; -webkit-user-select: none;
   }
   .cl-item:last-child { border-bottom: none; }
-  .cl-item:hover { background: var(--bg); }
+  @media (hover: hover) { .cl-item:hover { background: var(--bg); } }
+  .cl-item:active { background: var(--track-press); }
   .cl-item.sel { background: var(--track); }
+  .cl-item.sel:active { background: var(--track-press); }
 
   .cl-check {
     width: 18px; height: 18px; border-radius: 5px;
@@ -885,9 +941,10 @@ const styles = `
     background: none; border: 1px solid var(--border);
     border-radius: 6px; font-family: var(--font);
     font-size: 11.5px; color: var(--text-4);
-    padding: 4px 10px; cursor: pointer; transition: all 0.15s; flex-shrink: 0;
+    padding: 4px 10px; cursor: pointer; transition: all 0.12s; flex-shrink: 0;
   }
-  .btn-del:hover { border-color: var(--red); color: #fff; background: var(--red); }
+  @media (hover: hover) { .btn-del:hover { border-color: var(--red); color: #fff; background: var(--red); } }
+  .btn-del:active { transform: scale(0.97); border-color: var(--red-press); color: #fff; background: var(--red-press); }
 
   .list-empty { padding: 24px; text-align: center; color: var(--text-4); font-size: 13px; }
 
@@ -901,9 +958,10 @@ const styles = `
   .btn-textlink {
     background: none; border: none; padding: 0;
     font-family: var(--font); font-size: 12.5px; font-weight: 500;
-    color: var(--blue); cursor: pointer; transition: opacity 0.15s;
+    color: var(--blue); cursor: pointer; transition: color 0.12s, transform 0.12s;
   }
-  .btn-textlink:hover { opacity: 0.6; }
+  @media (hover: hover) { .btn-textlink:hover { color: var(--blue-press); } }
+  .btn-textlink:active { color: var(--blue-press); transform: scale(0.97); }
 
   .sel-toolbar {
     display: flex; align-items: center; justify-content: space-between;
@@ -913,16 +971,18 @@ const styles = `
   .sel-count { font-size: 12.5px; font-weight: 600; color: #fff; }
   .sel-toolbar-actions { display: flex; align-items: center; gap: 14px; }
   .sel-toolbar .btn-textlink { color: rgba(255,255,255,0.7); }
-  .sel-toolbar .btn-textlink:hover { color: #fff; opacity: 1; }
+  @media (hover: hover) { .sel-toolbar .btn-textlink:hover { color: #fff; } }
+  .sel-toolbar .btn-textlink:active { color: #fff; transform: scale(0.97); }
   .sel-toolbar .btn-del-sel {
     background: var(--red); color: #fff; border: none;
     border-radius: 6px; font-family: var(--font); font-size: 11.5px;
-    font-weight: 600; padding: 5px 12px; cursor: pointer; transition: all 0.15s;
+    font-weight: 600; padding: 5px 12px; cursor: pointer; transition: all 0.12s;
   }
-  .sel-toolbar .btn-del-sel:hover { background: var(--red-dark); }
+  @media (hover: hover) { .sel-toolbar .btn-del-sel:hover { background: var(--red-dark); } }
+  .sel-toolbar .btn-del-sel:active { transform: scale(0.97); background: var(--red-press); }
 
   /* Activity log */
-  .act-log { max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--r-sm); }
+  .act-log { max-height: 180px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--border); border-radius: var(--r-sm); }
   /* Dedicated sub-screen gives Activity Log / Release History the whole modal, so the
      list can run taller than the 180px it got as one section among many on the root
      list. */
@@ -947,7 +1007,7 @@ const styles = `
   .act-empty { padding: 20px; text-align: center; color: var(--text-4); font-size: 12.5px; }
 
   /* Bulk delete confirm modal list */
-  .bdc-list { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); max-height: 160px; overflow-y: auto; margin-bottom: 4px; }
+  .bdc-list { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); max-height: 160px; overflow-y: auto; overscroll-behavior: contain; margin-bottom: 4px; }
   .bdc-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; border-bottom: 1px solid rgba(60,60,67,0.06); font-size: 13px; }
   .bdc-item:last-child { border-bottom: none; }
   .bdc-code { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
@@ -959,11 +1019,11 @@ const styles = `
     background: var(--text); border: none; color: #fff;
     border-radius: var(--r-sm); font-family: var(--font);
     font-size: 13.5px; font-weight: 600;
-    padding: 12px; cursor: pointer; transition: all 0.15s;
+    padding: 12px; cursor: pointer; transition: all 0.12s;
     margin-top: 20px;
   }
-  .btn-export-csv:hover { background: #3a3a3c; }
-  .btn-export-csv:active { transform: scale(0.98); }
+  @media (hover: hover) { .btn-export-csv:hover { background: #3a3a3c; } }
+  .btn-export-csv:active { transform: scale(0.97); background: var(--ink-press); }
 
   /* Clear Old Logs: outlined destructive, quiet by default since it's a rare
      maintenance action, not something to compete visually with Export CSV. */
@@ -972,10 +1032,10 @@ const styles = `
     background: var(--surface); border: 1px solid var(--border-mid); color: var(--red);
     border-radius: var(--r-sm); font-family: var(--font);
     font-size: 13.5px; font-weight: 600;
-    padding: 12px; cursor: pointer; transition: all 0.15s; margin-top: 8px;
+    padding: 12px; cursor: pointer; transition: all 0.12s; margin-top: 8px;
   }
-  .btn-clear-logs:hover { background: var(--red); border-color: var(--red); color: #fff; }
-  .btn-clear-logs:active { transform: scale(0.98); }
+  @media (hover: hover) { .btn-clear-logs:hover { background: var(--red); border-color: var(--red); color: #fff; } }
+  .btn-clear-logs:active { transform: scale(0.97); background: var(--red-press); border-color: var(--red-press); color: #fff; }
 
   /* ─── CODE REVEAL (inside Take modal) ─── */
   /* The payoff screen, and the only place a code is ever shown deliberately. The code is
@@ -1027,10 +1087,11 @@ const styles = `
     font-size: 15.5px; font-weight: 700;
   }
   .reveal-btn.btn-sec { background: var(--track); border-color: transparent; color: var(--text-2); }
-  .reveal-btn.btn-sec:hover { background: var(--surface-3); color: var(--text); }
+  @media (hover: hover) { .reveal-btn.btn-sec:hover { background: var(--surface-3); color: var(--text); } }
+  .reveal-btn.btn-sec:active { background: var(--track-press); color: var(--text); }
   .reveal-btn.btn-pri { box-shadow: 0 4px 14px rgba(52,199,89,0.34); }
 
-  .btn-copy { flex: 1; transition: background 0.15s, color 0.15s; }
+  .btn-copy { flex: 1; transition: background 0.12s, color 0.12s, transform 0.12s; }
   /* Defined after .reveal-btn.btn-sec so the confirmed state still wins on the
      reveal screen. Equal specificity, so source order is what decides it. */
   .btn-copy.copied {
@@ -1046,6 +1107,7 @@ const styles = `
     45%  { transform: scale(1.045); }
     100% { transform: scale(1); }
   }
+  .btn-copy.copied:active { transform: scale(0.97); background: var(--green-mid); }
 
   /* Narrow phones. This has to live here rather than in the SMALL PHONES block near the
      top of the sheet: a media query adds no specificity, so an override placed before
@@ -1056,6 +1118,59 @@ const styles = `
     .reveal-modal { border-radius: 26px; padding: 26px 20px; }
     .reveal-code { font-size: 27px; padding: 19px 14px; letter-spacing: 0.5px; }
     .reveal-btn { padding: 15px 10px; font-size: 15px; }
+  }
+
+  /* ─── HIT AREAS ─── */
+  /* Every tappable element reaches at least 44 by 44px. A transparent pseudo-element grows
+     the target only when the element is smaller, so nothing moves on screen. Pills and
+     badges are display-only spans and are not tappable, so they are not listed. */
+  .logo-wrap,
+  .btn-topup,
+  .admin-alert-btn,
+  .seg,
+  .btn-mgr,
+  .btn-take,
+  .btn-release,
+  .conn-banner button,
+  .btn-sec,
+  .btn-pri,
+  .mgr-row,
+  .mgr-back,
+  .mgr-alert-btn,
+  .seg-ctrl button,
+  .btn-add,
+  .btn-bulk,
+  .btn-del,
+  .btn-textlink,
+  .btn-del-sel,
+  .btn-export-csv,
+  .btn-clear-logs,
+  .cl-item { position: relative; }
+  .logo-wrap::after,
+  .btn-topup::after,
+  .admin-alert-btn::after,
+  .seg::after,
+  .btn-mgr::after,
+  .btn-take::after,
+  .btn-release::after,
+  .conn-banner button::after,
+  .btn-sec::after,
+  .btn-pri::after,
+  .mgr-row::after,
+  .mgr-back::after,
+  .mgr-alert-btn::after,
+  .seg-ctrl button::after,
+  .btn-add::after,
+  .btn-bulk::after,
+  .btn-del::after,
+  .btn-textlink::after,
+  .btn-del-sel::after,
+  .btn-export-csv::after,
+  .btn-clear-logs::after,
+  .cl-item::after {
+    content: ""; position: absolute; top: 50%; left: 50%;
+    width: max(100%, 44px); height: max(100%, 44px);
+    transform: translate(-50%, -50%);
   }
 
 `;
@@ -2207,7 +2322,7 @@ export default function App() {
             title={isAdmin ? "Exit Admin" : "Admin Login"}
             aria-label={isAdmin ? "Exit Admin" : "Admin Login"}
           >
-            <img src="/logo.png" alt="SingBuild" className="logo-img" />
+            <img src="/logo.png" alt="SingBuild" className="logo-img" draggable="false" />
           </button>
           <div className="brand">
             <span className="brand-name">SB Grab Code Tracker</span>

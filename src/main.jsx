@@ -9,6 +9,36 @@ for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
   document.addEventListener(type, e => e.preventDefault(), { passive: false })
 }
 
+// Keep the modal overlay inside the part of the screen the on-screen keyboard leaves
+// visible. iOS does not resize the layout viewport for the keyboard, so 100dvh alone
+// would leave a centred modal half hidden. The overlay reads these two variables.
+const syncVisualViewport = () => {
+  const vv = window.visualViewport
+  const root = document.documentElement.style
+  root.setProperty('--vv-h', (vv ? vv.height : window.innerHeight) + 'px')
+  root.setProperty('--vv-top', (vv ? vv.offsetTop : 0) + 'px')
+}
+syncVisualViewport()
+window.addEventListener('resize', syncVisualViewport)
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', syncVisualViewport)
+  window.visualViewport.addEventListener('scroll', syncVisualViewport)
+}
+
+// Telegram webview: fill the sheet and stop swipe-down from closing it. Every call is
+// guarded, so a plain browser (no Telegram object) or an older client (no such method)
+// still runs the app.
+const tg = window.Telegram && window.Telegram.WebApp
+if (tg) {
+  for (const method of ['ready', 'expand', 'disableVerticalSwipes']) {
+    try {
+      if (typeof tg[method] === 'function') tg[method]()
+    } catch {
+      // Unsupported on this client version. Nothing to recover.
+    }
+  }
+}
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <App />
