@@ -238,8 +238,8 @@ const styles = `
   }
   .pill-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
   .pill.month { background: var(--track); color: var(--text-3); }
-  .pill.live { background: var(--green-light); border-color: var(--green-mid); color: var(--green-dark); }
-  .pill.live .pill-dot { background: var(--green); animation: blink 2s infinite; }
+  .pill.live { background: var(--green); border-color: var(--green); color: #fff; }
+  .pill.live .pill-dot { background: #fff; animation: blink 2s infinite; }
   .pill.admin { background: var(--red-dark); border-color: var(--red-dark); color: #fff; }
   .pill.sched { background: var(--purple-light); border-color: var(--purple-mid); color: var(--purple-dark); }
   .pill.sched .pill-dot { background: var(--purple); }
@@ -247,7 +247,7 @@ const styles = `
      a fault, and red is already spoken for by the admin pill sitting next to it. */
   .pill.req { background: var(--orange-light); border-color: var(--orange-mid); color: var(--orange-dark); }
   .pill.req .pill-dot { background: var(--orange); }
-  @keyframes blink { 0%,100%{background:var(--green);} 50%{background:var(--green-mid);} }
+  @keyframes blink { 0%,100%{background:#fff;} 50%{background:var(--green-mid);} }
 
   .conn-banner {
     background: var(--red-light); color: var(--red-dark);
@@ -1118,6 +1118,11 @@ const styles = `
   @media (hover: hover) { .reveal-btn.btn-sec:hover { background: var(--surface-3); color: var(--text); } }
   .reveal-btn.btn-sec:active { background: var(--track-press); color: var(--text); }
   .reveal-btn.btn-pri { box-shadow: 0 4px 14px rgba(52,199,89,0.34); }
+  /* Done matches the code block above it: the same solid var(--green). :not(:disabled)
+     keeps the shared grey disabled state from being overridden. */
+  .reveal-btn.btn-pri.green:not(:disabled) { background: var(--green); }
+  @media (hover: hover) { .reveal-btn.btn-pri.green:hover:not(:disabled) { background: var(--green-strong); } }
+  .reveal-btn.btn-pri.green:active:not(:disabled) { background: var(--green-dark); }
 
   .btn-copy { flex: 1; transition: background 0.12s, color 0.12s, transform 0.12s; }
   /* Defined after .reveal-btn.btn-sec so the confirmed state still wins on the
