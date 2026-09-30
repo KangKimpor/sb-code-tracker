@@ -727,9 +727,9 @@ const styles = `
   .btn-pri.blue { background: var(--blue-dark); box-shadow: 0 1px 4px rgba(0,122,255,0.22); }
   @media (hover: hover) { .btn-pri.blue:hover:not(:disabled) { background: var(--blue-hover); box-shadow: 0 3px 10px rgba(0,122,255,0.3); } }
   .btn-pri.blue:active:not(:disabled) { background: var(--blue-press); }
-  .btn-pri.green { background: var(--green-dark); box-shadow: 0 1px 4px rgba(52,199,89,0.22); }
-  @media (hover: hover) { .btn-pri.green:hover:not(:disabled) { background: var(--green-hover); box-shadow: 0 3px 10px rgba(52,199,89,0.3); } }
-  .btn-pri.green:active:not(:disabled) { background: var(--green-press); }
+  .btn-pri.green { background: var(--green); box-shadow: 0 1px 4px rgba(52,199,89,0.22); }
+  @media (hover: hover) { .btn-pri.green:hover:not(:disabled) { background: var(--green-strong); box-shadow: 0 3px 10px rgba(52,199,89,0.3); } }
+  .btn-pri.green:active:not(:disabled) { background: var(--green-dark); }
   .btn-pri.orange { background: var(--orange-dark); box-shadow: 0 1px 4px rgba(255,149,0,0.22); }
   @media (hover: hover) { .btn-pri.orange:hover:not(:disabled) { background: var(--orange-hover); } }
   .btn-pri.orange:active:not(:disabled) { background: var(--orange-press); }
@@ -1118,11 +1118,6 @@ const styles = `
   @media (hover: hover) { .reveal-btn.btn-sec:hover { background: var(--surface-3); color: var(--text); } }
   .reveal-btn.btn-sec:active { background: var(--track-press); color: var(--text); }
   .reveal-btn.btn-pri { box-shadow: 0 4px 14px rgba(52,199,89,0.34); }
-  /* Done matches the code block above it: the same solid var(--green). :not(:disabled)
-     keeps the shared grey disabled state from being overridden. */
-  .reveal-btn.btn-pri.green:not(:disabled) { background: var(--green); }
-  @media (hover: hover) { .reveal-btn.btn-pri.green:hover:not(:disabled) { background: var(--green-strong); } }
-  .reveal-btn.btn-pri.green:active:not(:disabled) { background: var(--green-dark); }
 
   .btn-copy { flex: 1; transition: background 0.12s, color 0.12s, transform 0.12s; }
   /* Defined after .reveal-btn.btn-sec so the confirmed state still wins on the
