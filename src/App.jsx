@@ -76,7 +76,7 @@ const STATUS = { AVAILABLE: "available", TAKEN: "taken" };
 
 const styles = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html { -webkit-text-size-adjust: 100%; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; }
 
   :root {
     --bg: #eeeef2;
@@ -134,10 +134,18 @@ const styles = `
     background: var(--bg);
     color: var(--text);
     font-family: var(--font);
+    font-size: 16px;
+    touch-action: manipulation;
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     letter-spacing: -0.1px;
+  }
+
+  /* No double-tap zoom and no 300ms tap delay on anything tappable. */
+  button, select, input, textarea, label, a,
+  .t-row, .cl-item, .mgr-row, .mgr-row-static, .pill, .bdg, .seg, .overlay, .modal {
+    touch-action: manipulation;
   }
 
   .page {
@@ -581,8 +589,8 @@ const styles = `
   .f-input {
     width: 100%; background: var(--surface-2);
     border: 1.5px solid var(--border-mid);
-    border-radius: var(--r-sm); padding: 10px 14px;
-    font-family: var(--font); font-size: 14px; color: var(--text);
+    border-radius: var(--r-sm); padding: 9px 14px;
+    font-family: var(--font); font-size: 16px; color: var(--text);
     outline: none; transition: all 0.16s; -webkit-appearance: none;
   }
   .f-input:focus { border-color: var(--blue); background: var(--surface); box-shadow: 0 0 0 3px var(--blue-light); }
@@ -600,8 +608,8 @@ const styles = `
   .f-select {
     width: 100%; background: var(--surface-2);
     border: 1.5px solid var(--border-mid);
-    border-radius: var(--r-sm); padding: 10px 34px 10px 14px;
-    font-family: var(--font); font-size: 14px; font-weight: 500; color: var(--text);
+    border-radius: var(--r-sm); padding: 9px 34px 9px 14px;
+    font-family: var(--font); font-size: 16px; font-weight: 500; color: var(--text);
     outline: none; cursor: pointer; transition: all 0.16s;
     -webkit-appearance: none; -moz-appearance: none; appearance: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238e8e93' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
@@ -803,8 +811,8 @@ const styles = `
   .bulk-ta {
     width: 100%; background: var(--surface-recessed);
     border: 1.5px solid var(--border);
-    border-radius: var(--r-sm); padding: 10px 14px;
-    font-family: var(--font-mono); font-size: 12.5px;
+    border-radius: var(--r-sm); padding: 9px 14px;
+    font-family: var(--font-mono); font-size: 16px;
     color: var(--text); outline: none; resize: vertical;
     min-height: 80px; margin-bottom: 6px;
     transition: all 0.16s; -webkit-appearance: none;
