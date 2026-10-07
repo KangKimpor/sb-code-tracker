@@ -268,14 +268,25 @@ const styles = `
   /* ─── AVAILABILITY HERO ─── */
   /* Replaces the three Total/Available/Taken stat cards. Staff only ever asked
      one question here: is there a code left for me. */
-  .hero {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--r-2xl); box-shadow: var(--sh);
-    padding: 26px 22px; margin-bottom: 16px; text-align: center;
+  @font-face {
+    font-family: 'Pill DM Sans'; src: url('/dm-sans-bold.woff2') format('woff2');
+    font-weight: 700; font-display: swap;
+  }
+  .hero { margin-bottom: 16px; text-align: center; }
+  .hero-headline {
+    container-type: inline-size; aspect-ratio: 1366 / 340;
+    display: flex; align-items: center; justify-content: center;
+    background: #fcfaf6 url('/pchum-ben-pill.png') center 47.4% / 100% auto no-repeat;
+    border-radius: 999px; box-shadow: var(--sh);
+  }
+  .hero-details {
+    background: var(--surface); border-radius: var(--r-lg);
+    padding: 16px 22px; margin-top: 10px;
   }
   .hero-num {
-    font-size: 30px; font-weight: 800; line-height: 1.1;
-    letter-spacing: -1.1px; color: var(--green-strong);
+    max-width: 60%; font-family: 'Pill DM Sans', var(--font);
+    font-size: 5cqw; font-weight: 700; line-height: 1.1;
+    letter-spacing: 0; color: #098451;
     /* Keyed on the avail/total pair in the JSX below, so React remounts this node
        (and replays the animation) whenever the count actually changes, not on every
        render. Gives the headline figure a small settle instead of silently jumping,
@@ -542,8 +553,6 @@ const styles = `
     .logo-wrap { height: 40px; }
     .brand-name { font-size: 18.5px; }
     .brand { gap: 6px; }
-    .hero { padding: 22px 16px; }
-    .hero-num { font-size: 25px; letter-spacing: -0.9px; }
     .hero-sub { font-size: 14px; }
     .seg { font-size: 13.5px; padding: 8px 4px; }
     .t-row { padding: 14px 15px; gap: 10px; }
@@ -2422,28 +2431,32 @@ export default function App() {
 
           {/* ── AVAILABILITY ── */}
           <div className="hero">
-            <div key={`${avail}-${total}`} className={`hero-num${avail === 0 ? " none" : ""}`}>
-              {total === 0 ? `No codes for ${monthLabel(nowMonth)}` : `${avail} of ${total} code${total === 1 ? "" : "s"} available`}
-            </div>
-            {total === 0 && (
-              <div className="hero-sub">
-                {stagedDrops.length
-                  ? `${stagedDrops[0][1].length} ready for ${monthLabel(stagedDrops[0][0])}`
-                  : "Waiting for this month's codes"}
+            <div className="hero-headline">
+              <div key={`${avail}-${total}`} className={`hero-num${avail === 0 ? " none" : ""}`}>
+                {total === 0 ? `No codes for ${monthLabel(nowMonth)}` : `${avail} of ${total} code${total === 1 ? "" : "s"} available`}
               </div>
-            )}
-            {canRequestTopup && (
-              <button
-                className={`btn-topup${requestSent ? " sent" : ""}`}
-                onClick={requestTopup}
-                disabled={requestSent || requestBusy}
-              >
-                {requestSent ? "Admin notified ✓" : requestBusy ? "Sending…" : "Tell admin we're out"}
-              </button>
-            )}
-            {canRequestTopup && requestSent && (
-              <div className="topup-note">More codes get added when the admin sees this.</div>
-            )}
+            </div>
+            {(total === 0 || canRequestTopup) && <div className="hero-details">
+              {total === 0 && (
+                <div className="hero-sub">
+                  {stagedDrops.length
+                    ? `${stagedDrops[0][1].length} ready for ${monthLabel(stagedDrops[0][0])}`
+                    : "Waiting for this month's codes"}
+                </div>
+              )}
+              {canRequestTopup && (
+                <button
+                  className={`btn-topup${requestSent ? " sent" : ""}`}
+                  onClick={requestTopup}
+                  disabled={requestSent || requestBusy}
+                >
+                  {requestSent ? "Admin notified ✓" : requestBusy ? "Sending…" : "Tell admin we're out"}
+                </button>
+              )}
+              {canRequestTopup && requestSent && (
+                <div className="topup-note">More codes get added when the admin sees this.</div>
+              )}
+            </div>}
           </div>
 
           {/* ── TOOLBAR ── */}
