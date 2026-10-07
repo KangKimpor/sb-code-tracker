@@ -278,7 +278,7 @@ const styles = `
   .hero-headline {
     container-type: inline-size; aspect-ratio: 1366 / 340;
     display: flex; align-items: center; justify-content: center;
-    background: #fcfaf6 url('${pillArtwork}') center 47.4% / 100% auto no-repeat;
+    background: #fcfaf6 url('${pillArtwork}') center / 100% 100% no-repeat;
     border-radius: 999px; box-shadow: var(--sh);
   }
   .hero-details {
