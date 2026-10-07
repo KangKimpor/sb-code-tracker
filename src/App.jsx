@@ -1,5 +1,7 @@
 // Version 1.3.0
 import { useState, useEffect, useRef } from "react";
+import pillArtwork from "./assets/pchum-ben-pill.webp";
+import pillFont from "./assets/dm-sans-bold.woff2";
 import { Analytics } from "@vercel/analytics/react";
 import { initializeApp } from "firebase/app";
 import {
@@ -269,14 +271,14 @@ const styles = `
   /* Replaces the three Total/Available/Taken stat cards. Staff only ever asked
      one question here: is there a code left for me. */
   @font-face {
-    font-family: 'Pill DM Sans'; src: url('/dm-sans-bold.woff2') format('woff2');
+    font-family: 'Pill DM Sans'; src: url('${pillFont}') format('woff2');
     font-weight: 700; font-display: swap;
   }
   .hero { margin-bottom: 16px; text-align: center; }
   .hero-headline {
     container-type: inline-size; aspect-ratio: 1366 / 340;
     display: flex; align-items: center; justify-content: center;
-    background: #fcfaf6 url('/pchum-ben-pill.png') center 47.4% / 100% auto no-repeat;
+    background: #fcfaf6 url('${pillArtwork}') center 47.4% / 100% auto no-repeat;
     border-radius: 999px; box-shadow: var(--sh);
   }
   .hero-details {
