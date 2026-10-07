@@ -379,6 +379,9 @@ const styles = `
 
   /* ─── TOOLBAR ─── */
   .toolbar { display: flex; flex-direction: column; margin-bottom: 16px; }
+  /* The later modal .seg-ctrl rule adds margin-bottom: 12px here too. Zero it so tabs-to-list
+     matches the pill-to-tabs gap (16px each). */
+  .toolbar .seg-ctrl { margin-bottom: 0; }
 
   .seg-ctrl {
     display: flex; width: 100%;
