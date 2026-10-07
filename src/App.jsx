@@ -207,23 +207,22 @@ const styles = `
 
   /* ─── HEADER ─── */
   .topbar {
-    display: flex; align-items: center; gap: 14px;
+    display: flex; align-items: flex-start; gap: 14px;
     padding: 22px 4px 20px;
   }
 
   .logo-wrap {
-    height: 48px; width: auto;
+    /* Title line + gap + month pill, aligned to the title's visible top. */
+    height: calc(1rlh + 1lh + 15px); width: auto; margin-top: 4px;
     background: none; border: none; padding: 0;
-    flex-shrink: 0; cursor: pointer; font: inherit;
+    flex-shrink: 0; cursor: pointer; font: inherit; font-size: 21px; line-height: 1.15;
     display: flex; align-items: center;
     transition: transform 0.12s var(--ease-out), background 0.12s;
   }
   @media (hover: hover) { .logo-wrap:hover { transform: scale(1.05); } }
   .logo-wrap:active { transform: scale(0.97); background: var(--track-press); border-radius: 12px; }
 
-  /* Height-driven with auto width, so /logo.png can be swapped for a wider
-     wordmark version without touching the layout. */
-  .logo-img { height: 100%; width: auto; max-width: 104px; object-fit: contain; display: block; }
+  .logo-img { height: 100%; width: auto; object-fit: contain; display: block; }
 
   .brand { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
   .brand-name {
@@ -552,8 +551,8 @@ const styles = `
                calc(36px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
     }
     .topbar { gap: 11px; padding: 18px 2px 16px; }
-    .logo-wrap { height: 40px; }
-    .brand-name { font-size: 18.5px; }
+    .logo-wrap { margin-top: 3px; }
+    .logo-wrap, .brand-name { font-size: clamp(16px, 5vw, 18.5px); }
     .brand { gap: 6px; }
     .hero-sub { font-size: 14px; }
     .seg { font-size: 13.5px; padding: 8px 4px; }
