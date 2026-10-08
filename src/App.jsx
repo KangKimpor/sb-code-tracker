@@ -187,7 +187,7 @@ const styles = `
   /* Chrome, not content: UI text cannot be long-press selected and shows no iOS callout.
      Code values and form fields stay selectable so a code can still be copied. */
   button, label, h1, h2, h3, .pill, .bdg, .t-row, .cl-item, .mgr-row, .mgr-row-static,
-  .mgr-alert-row, .act-item, .bdc-item, .hero-num, .hero-sub, .brand-name, .m-title, .m-sub,
+  .mgr-alert-row, .act-item, .bdc-item, .hero-num, .hero-sub, .m-title, .m-sub,
   .logo-img {
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   }
@@ -212,7 +212,7 @@ const styles = `
   }
 
   .logo-wrap {
-    width: 240px; max-width: 100%;
+    width: 180px; max-width: 100%;
     background: none; border: none; padding: 0;
     flex-shrink: 0; cursor: pointer; font: inherit;
     display: flex; align-items: center;
@@ -223,11 +223,6 @@ const styles = `
 
   .logo-img { width: 100%; height: auto; object-fit: contain; display: block; }
 
-  .brand { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
-  .brand-name {
-    font-size: 21px; font-weight: 700; color: var(--text);
-    line-height: 1.15; letter-spacing: -0.6px;
-  }
   .brand-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .brand-meta:empty { display: none; }
 
@@ -550,8 +545,6 @@ const styles = `
                calc(36px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
     }
     .topbar { gap: 11px; padding: 18px 2px 16px; }
-    .brand-name { font-size: clamp(16px, 5vw, 18.5px); }
-    .brand { gap: 6px; }
     .hero-sub { font-size: 14px; }
     .seg { font-size: 13.5px; padding: 8px 4px; }
     .t-row { padding: 14px 15px; gap: 10px; }
@@ -2360,23 +2353,20 @@ export default function App() {
           >
             <img src="/singbuild-logo.png" alt="Singbuild" width="682" height="185" className="logo-img" draggable="false" />
           </button>
-          <div className="brand">
-            <span className="brand-name">SB Grab Code Tracker</span>
-            <div className="brand-meta">
-              {isAdmin && (
-                <span className="pill admin">Admin</span>
-              )}
-              {isAdmin && stagedCodes.length > 0 && (
-                <span className="pill sched" title={`${stagedCodes.length} code(s) staged for a future month`}>
-                  <span className="pill-dot"></span>{stagedCodes.length} scheduled
-                </span>
-              )}
-              {isAdmin && waitingCount > 0 && (
-                <span className="pill req" title={`${waitingCount} staff member(s) have asked for more codes this month`}>
-                  <span className="pill-dot"></span>{waitingCount} waiting
-                </span>
-              )}
-            </div>
+          <div className="brand-meta">
+            {isAdmin && (
+              <span className="pill admin">Admin</span>
+            )}
+            {isAdmin && stagedCodes.length > 0 && (
+              <span className="pill sched" title={`${stagedCodes.length} code(s) staged for a future month`}>
+                <span className="pill-dot"></span>{stagedCodes.length} scheduled
+              </span>
+            )}
+            {isAdmin && waitingCount > 0 && (
+              <span className="pill req" title={`${waitingCount} staff member(s) have asked for more codes this month`}>
+                <span className="pill-dot"></span>{waitingCount} waiting
+              </span>
+            )}
           </div>
         </nav>
 
