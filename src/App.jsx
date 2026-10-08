@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import pillArtwork from "./assets/pchum-ben-pill.webp";
 import pillFont from "./assets/dm-sans-bold.woff2";
+import headerRing from "./assets/header-ring-hq.webp";
 import { suggestDeviceName } from "./deviceNames";
 import { Analytics } from "@vercel/analytics/react";
 import { initializeApp } from "firebase/app";
@@ -2527,7 +2528,8 @@ export default function App() {
           <div className="header-capsules" aria-hidden="true">
             <picture>
               <source media="(prefers-reduced-motion: reduce)" srcSet="/header-ring-poster.webp" />
-              <img src="/header-ring.webp" alt="" width="128" height="128" decoding="async"
+              {/* eslint-disable-next-line react/no-unknown-property -- React 18 forwards this native attribute in lowercase. */}
+              <img src={headerRing} alt="" width="192" height="192" decoding="async" fetchpriority="low"
                 onError={event => { event.currentTarget.hidden = true; }} />
             </picture>
           </div>
