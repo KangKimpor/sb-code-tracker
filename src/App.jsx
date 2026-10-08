@@ -78,19 +78,19 @@ const LS_STAFF_NAME = "sbGrabStaffName";
 const ADMIN_PIN = import.meta.env.VITE_ADMIN_PIN || "782945"; // CHANGE THIS or set VITE_ADMIN_PIN in .env
 const STATUS = { AVAILABLE: "available", TAKEN: "taken" };
 const HEADER_PETALS = [
-  "linear-gradient(155deg, #e7b848, #cf8d00 65%, #e5bb63)",
-  "linear-gradient(155deg, #ad776a, #6b2600 55%, #642400)",
-  "linear-gradient(155deg, #b8acf0, #c6b8ef 55%, #f19ad2)",
-  "linear-gradient(155deg, #39002d, #850077 60%, #e773cf)",
-  "linear-gradient(155deg, #ff512c, #c62928 45%, #62002d)",
-  "linear-gradient(155deg, #9bd4be, #005523 50%, #4e8c24)",
-  "linear-gradient(155deg, #e5dfbb, #b7c0dc 45%, #0048da 80%)",
-  "linear-gradient(155deg, #8e4e35, #6b2600 60%, #8f6357)",
-  "linear-gradient(155deg, #95013a, #ff005e 50%, #ff9ddd)",
-  "linear-gradient(155deg, #dec69b, #fa8cda 60%, #ff8ce0)",
-  "linear-gradient(155deg, #ff4b00, #ff7b3f 45%, #dfae8c)",
-  "linear-gradient(155deg, #800034, #f90058 55%, #ff95d3)",
-  "linear-gradient(155deg, #64c1c8, #caa3e7 55%, #300062)",
+  "linear-gradient(170deg, #702600, #702600 75%, #824325)",
+  "linear-gradient(180deg, #78002e, #ff0055 50%, #ff9bdc)",
+  "linear-gradient(180deg, #d9c39d, #ff8cda 65%, #f99ada)",
+  "radial-gradient(ellipse at 60% 50%, #e0a383, #dd8e6b 50%, #ff4b00 90%)",
+  "radial-gradient(ellipse at 15% 85%, #e6a6ce, #ff0060 58%, #88003d)",
+  "linear-gradient(120deg, #270058, #c79ee5 48%, #c5abe8 72%, #71bac8)",
+  "radial-gradient(ellipse at 15% 20%, #d9b261, #ce9000 75%)",
+  "radial-gradient(ellipse at 85% 90%, #b59183, #742700 60%)",
+  "radial-gradient(ellipse at 95% 5%, #ff6423, transparent 38%), #b9b1ed",
+  "radial-gradient(ellipse at 10% 15%, #dd8dda, #850076 45%, #390027 85%)",
+  "radial-gradient(ellipse at 70% 35%, #d33222, #aa202d 40%, #70002f 75%, #ff5326)",
+  "radial-gradient(ellipse at 85% 80%, #548e2c, #005b26 55%, #99d8bd 95%)",
+  "linear-gradient(145deg, #ddd8bb 25%, #b5bec3 55%, #0047d8 85%)",
 ];
 
 const styles = `
@@ -264,14 +264,20 @@ const styles = `
 
   .header-capsules {
     position: relative; width: 64px; height: 64px; flex-shrink: 0;
-    pointer-events: none; animation: spin 24s linear infinite;
+    pointer-events: none; perspective: 180px; animation: spin 12s linear infinite reverse;
   }
   .header-capsules span {
-    position: absolute; left: 50%; top: 50%; width: 10%; height: 32%; border-radius: 999px;
-    transform: translate(-50%, -50%) rotate(var(--petal-angle)) translateY(-100%);
+    position: absolute; left: 50%; top: 50%; width: 22%; height: 40%; border-radius: 50% / 30%;
+    transform: translate(-50%, -50%) rotate(var(--petal-angle)) translateY(-72.5%) rotate(-12deg);
+    animation: capsuleRoll 6s ease-in-out infinite; animation-delay: var(--petal-phase);
+  }
+  .header-capsules span:first-child { z-index: 1; }
+  @keyframes capsuleRoll {
+    0%, 100% { transform: translate(-50%, -50%) rotate(var(--petal-angle)) translateY(-72.5%) rotate(-22deg) rotateY(60deg); }
+    50% { transform: translate(-50%, -50%) rotate(var(--petal-angle)) translateY(-67.5%) rotate(35deg) rotateY(-20deg) scale(1.08); }
   }
   @media (prefers-reduced-motion: reduce) {
-    .header-capsules { animation: none; }
+    .header-capsules, .header-capsules span { animation: none; }
   }
 
   .brand-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; }
@@ -2546,7 +2552,7 @@ export default function App() {
           </button>
           <div className="header-capsules" aria-hidden="true">
             {HEADER_PETALS.map((background, index) => (
-              <span key={background} style={{ background, "--petal-angle": `${index * 360 / HEADER_PETALS.length + 7}deg` }} />
+              <span key={background} style={{ background, "--petal-angle": `${index * 360 / HEADER_PETALS.length + 7}deg`, "--petal-phase": `${-2 - index * 0.18}s` }} />
             ))}
           </div>
           <div className="brand-meta">
