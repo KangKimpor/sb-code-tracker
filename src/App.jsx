@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import pillArtwork from "./assets/pchum-ben-pill.webp";
 import pillFont from "./assets/dm-sans-bold.woff2";
+import { suggestDeviceName } from "./deviceNames";
 import { Analytics } from "@vercel/analytics/react";
 import { initializeApp } from "firebase/app";
 import {
@@ -9,7 +10,7 @@ import {
   collection, onSnapshot,
   addDoc, updateDoc, deleteDoc, doc,
   query, orderBy, limit, where,
-  serverTimestamp, getDocs, writeBatch, Timestamp
+  serverTimestamp, getDocs, getDocsFromServer, writeBatch, Timestamp
 } from "firebase/firestore";
 
 // 🔥 Firebase config loaded from environment variables
@@ -66,6 +67,7 @@ const STAGE_REMINDER_DAYS = 7;
 
 const LS_DEVICE = "sbGrabDeviceId";
 const LS_REQUEST = "sbGrabLastRequest";
+const LS_STAFF_NAME = "sbGrabStaffName";
 
 // ⚠️ NOT A SECURITY BOUNDARY. Vite inlines every VITE_* variable into the public
 // bundle at build time, so whatever value this resolves to is readable by anyone
@@ -200,7 +202,7 @@ const styles = `
     min-height: 100vh; min-height: 100svh;
     position: relative;
     transform: translateY(var(--pull-distance, 0px));
-    transition: transform 0.24s var(--ease-out);
+    transition: transform 0.36s cubic-bezier(0.22, 1, 0.36, 1);
     display: flex; flex-direction: column;
     width: 100%; max-width: 560px; margin: 0 auto;
     padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px))
@@ -211,14 +213,19 @@ const styles = `
   .pull-refresh {
     position: absolute; top: 0; left: 0; width: 100%; height: 56px;
     display: flex; align-items: center; justify-content: center; gap: 8px;
-    transform: translateY(-100%); visibility: hidden; pointer-events: none;
+    transform: translateY(-100%); visibility: hidden; opacity: 0; pointer-events: none;
+    transition: opacity 0.18s ease, visibility 0s linear 0.18s;
     color: var(--text-3); font-size: 13px; font-weight: 600;
   }
-  .pull-refresh.visible { visibility: visible; }
-  .pull-refresh-icon { display: inline-block; font-size: 20px; line-height: 1; }
+  .pull-refresh.visible { visibility: visible; opacity: 1; transition-delay: 0s; }
+  .pull-refresh-icon {
+    display: inline-block; width: 18px; height: 18px;
+    border: 2px solid var(--border-mid); border-top-color: var(--blue-dark); border-radius: 50%;
+  }
   .pull-refresh.refreshing .pull-refresh-icon { animation: spin 0.8s linear infinite; }
   @media (prefers-reduced-motion: reduce) {
     .page { transition: none; }
+    .pull-refresh { transition: none; }
     .pull-refresh.refreshing .pull-refresh-icon { animation: none; }
   }
 
@@ -1403,8 +1410,9 @@ function writeLocal(key, value) {
 // A random per-device id, so the admin sees how many *people* are waiting rather than
 // how many times a button was tapped. It identifies a browser, not a person, holds no
 // personal data, and clearing site data just mints a new one.
+let sessionDeviceId = null;
 function getDeviceId() {
-  let id = readLocal(LS_DEVICE);
+  let id = readLocal(LS_DEVICE) || sessionDeviceId;
   if (!id) {
     // randomUUID needs a secure context, which rules it out on plain-http LAN testing.
     id = (typeof crypto !== "undefined" && crypto.randomUUID)
@@ -1412,6 +1420,7 @@ function getDeviceId() {
       : Math.random().toString(36).slice(2) + Date.now().toString(36);
     writeLocal(LS_DEVICE, id);
   }
+  sessionDeviceId = id;
   return id;
 }
 
@@ -1441,10 +1450,20 @@ function log(type, text) {
   addDoc(logsRef, { type, text, ts: Date.now(), deviceId: getDeviceId() }).catch(() => {});
 }
 
+function codesFromSnapshot(snapshot) {
+  return snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+}
+
 export default function App() {
+  useEffect(() => {
+    try { window.Telegram?.WebApp?.ready?.(); } catch { /* older host */ }
+  }, []);
   const [codes, setCodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [connError, setConnError] = useState(false);
+  const [codesSubscription, setCodesSubscription] = useState(0);
+  const codesListening = useRef(false);
   // OFFLINE FIX: persistentLocalCache (added for the "Fix lag" perf change) means
   // onSnapshot's success callback now fires from the local cache even with zero
   // connectivity, so `err` never fires and `loading`/`connError` stop being a reliable
@@ -1544,6 +1563,8 @@ export default function App() {
     let start = null;
     let distance = 0;
     let frame = null;
+    let timer = null;
+    let disposed = false;
     let refreshing = false;
     const blocked = () => refreshBlocked || !!document.querySelector(".overlay");
     const paint = () => page.style.setProperty("--pull-distance", `${distance}px`);
@@ -1580,7 +1601,7 @@ export default function App() {
         return;
       }
       event.preventDefault();
-      distance = Math.min(96, Math.max(0, (dy - 8) * 0.5));
+      distance = 96 * (1 - Math.exp(-Math.max(0, dy - 6) / 120));
       page.classList.add("is-pulling");
       setPullState(distance >= 64 ? "ready" : distance > 0 ? "pulling" : "idle");
       if (frame === null) frame = requestAnimationFrame(() => { frame = null; paint(); });
@@ -1599,9 +1620,31 @@ export default function App() {
       page.classList.remove("is-pulling");
       paint();
       setPullState("refreshing");
-      // Give the refreshing indicator a paint before loading the latest app.
-      frame = requestAnimationFrame(() => {
-        frame = requestAnimationFrame(() => window.location.reload());
+      // Keep the current screen mounted. Only the explicit refresh fetches again;
+      // initial loading and every Take still use the existing live listener.
+      const started = performance.now();
+      const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Refresh timed out")), 8000);
+      });
+      Promise.race([getDocsFromServer(codesRef), timeout]).then(snapshot => {
+        if (disposed) return;
+        setCodes(codesFromSnapshot(snapshot));
+        setLoading(false);
+        setConnError(false);
+        setIsStale(false);
+        if (!codesListening.current) setCodesSubscription(value => value + 1);
+        setPullState("updated");
+      }).catch(() => {
+        if (disposed) return;
+        setPullState("failed");
+      }).finally(() => {
+        clearTimeout(timer);
+        if (disposed) return;
+        // Even a fast response gets a smooth settle instead of a one-frame flash.
+        timer = setTimeout(() => {
+          refreshing = false;
+          reset();
+        }, Math.max(350, 650 - (performance.now() - started)));
       });
     }
     function cancel() { reset(); }
@@ -1619,6 +1662,8 @@ export default function App() {
     window.addEventListener("scroll", syncMove, { passive: true });
     syncMove();
     return () => {
+      disposed = true;
+      clearTimeout(timer);
       page.removeEventListener("touchstart", begin);
       page.removeEventListener("touchmove", move);
       window.removeEventListener("scroll", syncMove);
@@ -1688,29 +1733,29 @@ export default function App() {
 
   // Firebase real-time listener: codes (always on)
   useEffect(() => {
+    codesListening.current = true;
     // OFFLINE FIX: includeMetadataChanges plus snapshot.metadata.fromCache is how you
     // tell a genuinely fresh snapshot apart from a cache replay now that persistence is
     // on. fromCache alone is not enough, a healthy online listener also serves its very
     // first paint from cache before the server ack lands, so it is paired with
     // navigator.onLine: only "from cache" AND "browser reports offline" counts as stale.
     const unsub = onSnapshot(codesRef, { includeMetadataChanges: true }, snap => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       // `|| 0` keeps the comparator consistent if a doc was added outside the app
       // (e.g. via the Firebase console) and has no createdAt. Otherwise NaN makes
       // the sort order implementation-defined.
-      data.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-      setCodes(data);
+      setCodes(codesFromSnapshot(snap));
       setLoading(false);
       setConnError(false);
       setIsStale(snap.metadata.fromCache && !navigator.onLine);
     }, err => {
       // ponytail: keep last-good codes on screen; surface a banner instead of an infinite "Connecting..." spinner
       console.error("codes listener failed:", err);
+      codesListening.current = false;
       setLoading(false);
       setConnError(true);
     });
-    return () => unsub();
-  }, []);
+    return () => { codesListening.current = false; unsub(); };
+  }, [codesSubscription]);
 
   // Firebase real-time listener: activity log (lazy: only when Code Manager open) (Fix #7)
   useEffect(() => {
@@ -1964,6 +2009,7 @@ export default function App() {
       takenAt: serverTimestamp(),
       takenDevice: myDevice,
     }).then(() => {
+      writeLocal(LS_STAFF_NAME, JSON.stringify({ deviceId: myDevice, name }));
       setOptimistic(p => { const n = { ...p }; delete n[id]; return n; });
       log("take", `${name} took ${code}`);
     }).catch(err => {
@@ -2455,8 +2501,8 @@ export default function App() {
       <style>{styles}</style>
       <div className="page" ref={pageRef}>
         <div className={`pull-refresh ${pullState !== "idle" ? "visible" : ""} ${pullState === "refreshing" ? "refreshing" : ""}`} role="status" aria-live="polite">
-          <span className="pull-refresh-icon" aria-hidden="true">↻</span>
-          <span>{pullState === "refreshing" ? "Refreshing..." : pullState === "ready" ? "Release to refresh" : "Pull down to refresh"}</span>
+          <span className="pull-refresh-icon" aria-hidden="true"></span>
+          <span>{pullState === "refreshing" ? "Refreshing..." : pullState === "updated" ? "Updated" : pullState === "failed" ? "Couldn't refresh. Showing saved codes." : pullState === "ready" ? "Release to refresh" : "Pull down to refresh"}</span>
         </div>
 
         {/* ── HEADER ── */}
@@ -2615,7 +2661,13 @@ export default function App() {
                       )}
                       <div className="t-act">
                         {c.status === STATUS.AVAILABLE
-                          ? <button className="btn-take" onClick={() => setTakeModal({ id: c.id, code: c.code })}>Take</button>
+                          ? <button className="btn-take" onClick={() => {
+                            let remembered = null;
+                            try { remembered = JSON.parse(readLocal(LS_STAFF_NAME)); } catch { /* ignore invalid saved data */ }
+                            setStaffName(suggestDeviceName(getDeviceId(), remembered, codes));
+                            setTakeError("");
+                            setTakeModal({ id: c.id, code: c.code });
+                          }}>Take</button>
                           : isAdmin
                             ? <button className="btn-release" onClick={() => setReleaseConfirm({ id: c.id, code: c.code, takenBy: c.takenBy, takenAt: c.takenAt, takenDevice: c.takenDevice })}>Release</button>
                             : <span className="btn-taken-lock">Taken</span>
@@ -2683,11 +2735,11 @@ export default function App() {
                 </div>
                 <div className="code-chip">Reveal on confirm</div>
                 <label className="f-label">Your Name</label>
-                <input className="f-input" type="text" placeholder="e.g. Kimtong, Sothea, Hongsrun…"
+                <input className="f-input" type="text" autoComplete="name" maxLength={60} placeholder="e.g. Kimtong, Sothea, Hongsrun…"
                   value={staffName} onChange={e => setStaffName(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && staffName.trim() && !takeBusy && takeCode(takeModal.id, staffName.trim())}
                   disabled={takeBusy}
-                  autoFocus />
+                  autoFocus={!staffName} />
                 {takeError && (
                   <div className="take-error">{takeError}</div>
                 )}
