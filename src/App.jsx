@@ -251,11 +251,8 @@ const styles = `
     width: 64px; height: 64px; flex-shrink: 0; overflow: hidden; border-radius: 50%;
     pointer-events: none; background: var(--bg) url('/header-ring-poster.webp') center / cover no-repeat;
   }
-  .header-capsules video { display: block; width: 100%; height: 100%; object-fit: cover; }
-  .header-capsules video[hidden] { display: none; }
-  @media (prefers-reduced-motion: reduce) {
-    .header-capsules video { visibility: hidden; }
-  }
+  .header-capsules img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .header-capsules img[hidden] { display: none; }
 
   .brand-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; }
   .brand-meta:empty { display: none; }
@@ -1564,29 +1561,7 @@ export default function App() {
   const [copied, setCopied] = useState(false);
 
   const pageRef = useRef(null);
-  const headerVideoRef = useRef(null);
   const [pullState, setPullState] = useState("idle");
-
-  useEffect(() => {
-    const video = headerVideoRef.current;
-    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let frame = 0;
-    const syncPlayback = () => {
-      cancelAnimationFrame(frame);
-      if (motion.matches || document.hidden) video.pause();
-      // Reveal the video before requesting playback after a motion preference change.
-      else frame = requestAnimationFrame(() => video.play().catch(() => {}));
-    };
-    motion.addEventListener("change", syncPlayback);
-    document.addEventListener("visibilitychange", syncPlayback);
-    syncPlayback();
-    return () => {
-      motion.removeEventListener("change", syncPlayback);
-      document.removeEventListener("visibilitychange", syncPlayback);
-      cancelAnimationFrame(frame);
-      video.pause();
-    };
-  }, []);
   const refreshBlocked = takeBusy || requestBusy || Object.keys(optimistic).length > 0;
 
   // Ordinary scrolling and bottom-edge bounce stay native. Only a downward drag
@@ -2550,9 +2525,11 @@ export default function App() {
             <img src="/singbuild-logo.png" alt="Singbuild" width="682" height="185" className="logo-img" draggable="false" />
           </button>
           <div className="header-capsules" aria-hidden="true">
-            <video ref={headerVideoRef} src="/header-ring.mp4" poster="/header-ring-poster.webp"
-              width="192" height="192" autoPlay loop muted playsInline preload="metadata" tabIndex={-1}
-              onError={event => { event.currentTarget.hidden = true; }} />
+            <picture>
+              <source media="(prefers-reduced-motion: reduce)" srcSet="/header-ring-poster.webp" />
+              <img src="/header-ring.webp" alt="" width="128" height="128" decoding="async"
+                onError={event => { event.currentTarget.hidden = true; }} />
+            </picture>
           </div>
           <div className="brand-meta">
             {isAdmin && (
