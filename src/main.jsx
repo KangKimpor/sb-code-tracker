@@ -28,16 +28,27 @@ if (window.visualViewport) {
 // Telegram webview: fill the sheet and stop swipe-down from closing it. Every call is
 // guarded, so a plain browser (no Telegram object) or an older client (no such method)
 // still runs the app.
-const tg = window.Telegram && window.Telegram.WebApp
-if (tg) {
-  for (const method of ['ready', 'expand', 'disableVerticalSwipes']) {
+const configureTelegram = () => {
+  const tg = window.Telegram && window.Telegram.WebApp
+  if (!tg) return
+  for (const [method, args] of [
+    ['expand', []], ['disableVerticalSwipes', []],
+    ['setBackgroundColor', ['#eeeef2']], ['setHeaderColor', ['#eeeef2']],
+  ]) {
     try {
-      if (typeof tg[method] === 'function') tg[method]()
+      if (typeof tg[method] === 'function') tg[method](...args)
     } catch {
       // Unsupported on this client version. Nothing to recover.
     }
   }
+  // A late SDK load may happen after React is ready. Earlier loads are signalled
+  // by App's mount effect so Telegram never exposes an empty root.
+  if (document.querySelector('.page')) {
+    try { tg.ready?.() } catch { /* older host */ }
+  }
 }
+configureTelegram()
+document.getElementById('telegram-sdk')?.addEventListener('load', configureTelegram, { once: true })
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
