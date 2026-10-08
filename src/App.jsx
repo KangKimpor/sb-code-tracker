@@ -77,21 +77,6 @@ const LS_STAFF_NAME = "sbGrabStaffName";
 // Real admin gating requires Firebase Auth + custom claims enforced in firestore.rules.
 const ADMIN_PIN = import.meta.env.VITE_ADMIN_PIN || "782945"; // CHANGE THIS or set VITE_ADMIN_PIN in .env
 const STATUS = { AVAILABLE: "available", TAKEN: "taken" };
-const HEADER_PETALS = [
-  "linear-gradient(170deg, #702600, #702600 75%, #824325)",
-  "linear-gradient(180deg, #78002e, #ff0055 50%, #ff9bdc)",
-  "linear-gradient(180deg, #d9c39d, #ff8cda 65%, #f99ada)",
-  "radial-gradient(ellipse at 60% 50%, #e0a383, #dd8e6b 50%, #ff4b00 90%)",
-  "radial-gradient(ellipse at 15% 85%, #e6a6ce, #ff0060 58%, #88003d)",
-  "linear-gradient(120deg, #270058, #c79ee5 48%, #c5abe8 72%, #71bac8)",
-  "radial-gradient(ellipse at 15% 20%, #d9b261, #ce9000 75%)",
-  "radial-gradient(ellipse at 85% 90%, #b59183, #742700 60%)",
-  "radial-gradient(ellipse at 95% 5%, #ff6423, transparent 38%), #b9b1ed",
-  "radial-gradient(ellipse at 10% 15%, #dd8dda, #850076 45%, #390027 85%)",
-  "radial-gradient(ellipse at 70% 35%, #d33222, #aa202d 40%, #70002f 75%, #ff5326)",
-  "radial-gradient(ellipse at 85% 80%, #548e2c, #005b26 55%, #99d8bd 95%)",
-  "linear-gradient(145deg, #ddd8bb 25%, #b5bec3 55%, #0047d8 85%)",
-];
 
 const styles = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -263,21 +248,13 @@ const styles = `
   .logo-img { width: 100%; height: auto; object-fit: contain; display: block; }
 
   .header-capsules {
-    position: relative; width: 64px; height: 64px; flex-shrink: 0;
-    pointer-events: none; perspective: 180px; animation: spin 12s linear infinite reverse;
+    width: 64px; height: 64px; flex-shrink: 0; overflow: hidden; border-radius: 50%;
+    pointer-events: none; background: var(--bg) url('/header-ring-poster.webp') center / cover no-repeat;
   }
-  .header-capsules span {
-    position: absolute; left: 50%; top: 50%; width: 22%; height: 40%; border-radius: 50% / 30%;
-    transform: translate(-50%, -50%) rotate(var(--petal-angle)) translateY(-72.5%) rotate(-12deg);
-    animation: capsuleRoll 6s ease-in-out infinite; animation-delay: var(--petal-phase);
-  }
-  .header-capsules span:first-child { z-index: 1; }
-  @keyframes capsuleRoll {
-    0%, 100% { transform: translate(-50%, -50%) rotate(var(--petal-angle)) translateY(-72.5%) rotate(-22deg) rotateY(60deg); }
-    50% { transform: translate(-50%, -50%) rotate(var(--petal-angle)) translateY(-67.5%) rotate(35deg) rotateY(-20deg) scale(1.08); }
-  }
+  .header-capsules video { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .header-capsules video[hidden] { display: none; }
   @media (prefers-reduced-motion: reduce) {
-    .header-capsules, .header-capsules span { animation: none; }
+    .header-capsules video { visibility: hidden; }
   }
 
   .brand-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; }
@@ -1587,7 +1564,29 @@ export default function App() {
   const [copied, setCopied] = useState(false);
 
   const pageRef = useRef(null);
+  const headerVideoRef = useRef(null);
   const [pullState, setPullState] = useState("idle");
+
+  useEffect(() => {
+    const video = headerVideoRef.current;
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let frame = 0;
+    const syncPlayback = () => {
+      cancelAnimationFrame(frame);
+      if (motion.matches || document.hidden) video.pause();
+      // Reveal the video before requesting playback after a motion preference change.
+      else frame = requestAnimationFrame(() => video.play().catch(() => {}));
+    };
+    motion.addEventListener("change", syncPlayback);
+    document.addEventListener("visibilitychange", syncPlayback);
+    syncPlayback();
+    return () => {
+      motion.removeEventListener("change", syncPlayback);
+      document.removeEventListener("visibilitychange", syncPlayback);
+      cancelAnimationFrame(frame);
+      video.pause();
+    };
+  }, []);
   const refreshBlocked = takeBusy || requestBusy || Object.keys(optimistic).length > 0;
 
   // Ordinary scrolling and bottom-edge bounce stay native. Only a downward drag
@@ -2551,9 +2550,9 @@ export default function App() {
             <img src="/singbuild-logo.png" alt="Singbuild" width="682" height="185" className="logo-img" draggable="false" />
           </button>
           <div className="header-capsules" aria-hidden="true">
-            {HEADER_PETALS.map((background, index) => (
-              <span key={background} style={{ background, "--petal-angle": `${index * 360 / HEADER_PETALS.length + 7}deg`, "--petal-phase": `${-2 - index * 0.18}s` }} />
-            ))}
+            <video ref={headerVideoRef} src="/header-ring.mp4" poster="/header-ring-poster.webp"
+              width="192" height="192" autoPlay loop muted playsInline preload="metadata" tabIndex={-1}
+              onError={event => { event.currentTarget.hidden = true; }} />
           </div>
           <div className="brand-meta">
             {isAdmin && (
