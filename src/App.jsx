@@ -323,6 +323,10 @@ const styles = `
     to   { opacity: 1; transform: translateY(0); }
   }
   .hero-num.none { color: var(--text-3); }
+  .hero-count { display: flex; align-items: baseline; justify-content: center; gap: 1.4cqw; }
+  .hero-count-value { font-size: 8cqw; }
+  .hero-count-total { font-size: 4.8cqw; color: var(--text-3); }
+  .hero-count-label { display: block; margin-top: 0.5cqw; font-size: 3.2cqw; color: var(--text-3); }
   .hero-sub { font-size: 15px; color: var(--text-3); margin-top: 7px; letter-spacing: -0.2px; }
   .hero-sub.urgent { color: var(--orange-dark); font-weight: 600; }
 
@@ -2595,7 +2599,13 @@ export default function App() {
           <div className="hero">
             <div className="hero-headline">
               <div key={`${avail}-${total}`} className={`hero-num${avail === 0 ? " none" : ""}`}>
-                {total === 0 ? `No codes for ${monthLabel(nowMonth)}` : `${avail} of ${total} code${total === 1 ? "" : "s"} available`}
+                {total === 0 ? `No codes for ${monthLabel(nowMonth)}` : <>
+                  <span className="hero-count">
+                    <span className="hero-count-value">{avail}</span>
+                    <span className="hero-count-total">of {total}</span>
+                  </span>
+                  <span className="hero-count-label">{total === 1 ? "code" : "codes"}</span>
+                </>}
               </div>
             </div>
             {(total === 0 || canRequestTopup) && <div className="hero-details">
