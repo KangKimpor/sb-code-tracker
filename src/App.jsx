@@ -2529,7 +2529,7 @@ export default function App() {
             <picture>
               <source media="(prefers-reduced-motion: reduce)" srcSet="/header-ring-poster.webp" />
               {/* eslint-disable-next-line react/no-unknown-property -- React 18 forwards this native attribute in lowercase. */}
-              <img src={headerRing} alt="" width="192" height="192" decoding="async" fetchpriority="low"
+              <img src={headerRing} alt="" width="256" height="256" decoding="async" fetchpriority="low"
                 onError={event => { event.currentTarget.hidden = true; }} />
             </picture>
           </div>
