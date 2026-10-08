@@ -325,7 +325,7 @@ const styles = `
   .hero-num.none { color: var(--text-3); }
   .hero-count { display: flex; align-items: baseline; justify-content: center; gap: 1.4cqw; }
   .hero-count-value { font-size: 8cqw; }
-  .hero-count-total { font-size: 4.8cqw; color: var(--text-3); }
+  .hero-count-total { font-size: 8cqw; color: var(--text-3); }
   .hero-count-label { display: block; margin-top: 0.5cqw; font-size: 3.2cqw; color: var(--text-3); }
   .hero-sub { font-size: 15px; color: var(--text-3); margin-top: 7px; letter-spacing: -0.2px; }
   .hero-sub.urgent { color: var(--orange-dark); font-weight: 600; }
