@@ -207,22 +207,21 @@ const styles = `
 
   /* ─── HEADER ─── */
   .topbar {
-    display: flex; align-items: flex-start; gap: 14px;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 14px;
     padding: 22px 4px 20px;
   }
 
   .logo-wrap {
-    /* Title line + gap + month pill, aligned to the title's visible top. */
-    height: calc(1rlh + 1lh + 15px); width: auto; margin-top: 4px;
+    width: 240px; max-width: 100%;
     background: none; border: none; padding: 0;
-    flex-shrink: 0; cursor: pointer; font: inherit; font-size: 21px; line-height: 1.15;
+    flex-shrink: 0; cursor: pointer; font: inherit;
     display: flex; align-items: center;
     transition: transform 0.12s var(--ease-out), background 0.12s;
   }
   @media (hover: hover) { .logo-wrap:hover { transform: scale(1.05); } }
   .logo-wrap:active { transform: scale(0.97); background: var(--track-press); border-radius: 12px; }
 
-  .logo-img { height: 100%; width: auto; object-fit: contain; display: block; }
+  .logo-img { width: 100%; height: auto; object-fit: contain; display: block; }
 
   .brand { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
   .brand-name {
@@ -230,6 +229,7 @@ const styles = `
     line-height: 1.15; letter-spacing: -0.6px;
   }
   .brand-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .brand-meta:empty { display: none; }
 
   .pill {
     display: inline-flex; align-items: center; gap: 5px;
@@ -238,9 +238,6 @@ const styles = `
     border: 1px solid transparent; white-space: nowrap;
   }
   .pill-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-  .pill.month { background: var(--track); color: var(--text-3); }
-  .pill.live { background: var(--green); border-color: var(--green); color: #fff; }
-  .pill.live .pill-dot { background: #fff; animation: blink 2s infinite; }
   .pill.admin { background: var(--red-dark); border-color: var(--red-dark); color: #fff; }
   .pill.sched { background: var(--purple-light); border-color: var(--purple-mid); color: var(--purple-dark); }
   .pill.sched .pill-dot { background: var(--purple); }
@@ -248,7 +245,6 @@ const styles = `
      a fault, and red is already spoken for by the admin pill sitting next to it. */
   .pill.req { background: var(--orange-light); border-color: var(--orange-mid); color: var(--orange-dark); }
   .pill.req .pill-dot { background: var(--orange); }
-  @keyframes blink { 0%,100%{background:#fff;} 50%{background:var(--green-mid);} }
 
   .conn-banner {
     background: var(--red-light); color: var(--red-dark);
@@ -554,8 +550,7 @@ const styles = `
                calc(36px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
     }
     .topbar { gap: 11px; padding: 18px 2px 16px; }
-    .logo-wrap { margin-top: 3px; }
-    .logo-wrap, .brand-name { font-size: clamp(16px, 5vw, 18.5px); }
+    .brand-name { font-size: clamp(16px, 5vw, 18.5px); }
     .brand { gap: 6px; }
     .hero-sub { font-size: 14px; }
     .seg { font-size: 13.5px; padding: 8px 4px; }
@@ -2363,18 +2358,11 @@ export default function App() {
             title={isAdmin ? "Exit Admin" : "Admin Login"}
             aria-label={isAdmin ? "Exit Admin" : "Admin Login"}
           >
-            <img src="/logo.png" alt="SingBuild" className="logo-img" draggable="false" />
+            <img src="/singbuild-logo.png" alt="Singbuild" width="682" height="185" className="logo-img" draggable="false" />
           </button>
           <div className="brand">
             <span className="brand-name">SB Grab Code Tracker</span>
             <div className="brand-meta">
-              {/* Codes are month-scoped, so which month you're looking at is never implicit */}
-              <span className="pill month" title={`Showing codes for ${monthLabel(nowMonth)}`}>
-                {monthLabelShort(nowMonth)}
-              </span>
-              <span className="pill live">
-                <span className="pill-dot"></span>Live
-              </span>
               {isAdmin && (
                 <span className="pill admin">Admin</span>
               )}
