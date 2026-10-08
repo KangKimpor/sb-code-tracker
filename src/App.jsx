@@ -80,7 +80,7 @@ const styles = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   html {
     -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation;
-    overscroll-behavior-y: none;
+    overscroll-behavior-y: contain;
     scrollbar-gutter: stable;   /* reserve the scrollbar so locking scroll never shifts the page */
   }
   /* Lock the page behind any open modal. The gutter above stops the layout jump. */
@@ -171,8 +171,8 @@ const styles = `
     font-family: var(--font);
     font-size: 16px;
     touch-action: manipulation;
-    overscroll-behavior-y: none;
-    min-height: 100vh; min-height: 100svh; min-height: 100dvh;
+    overscroll-behavior-y: contain;
+    min-height: 100vh; min-height: 100svh;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     letter-spacing: -0.1px;
@@ -197,12 +197,29 @@ const styles = `
   }
 
   .page {
-    min-height: 100vh; min-height: 100svh; min-height: 100dvh;
+    min-height: 100vh; min-height: 100svh;
+    position: relative;
+    transform: translateY(var(--pull-distance, 0px));
+    transition: transform 0.24s var(--ease-out);
     display: flex; flex-direction: column;
     width: 100%; max-width: 560px; margin: 0 auto;
     padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px))
              calc(44px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
     text-align: left;   /* index.css centres #root */
+  }
+  .page.is-pulling { transition: none; }
+  .pull-refresh {
+    position: absolute; top: 0; left: 0; width: 100%; height: 56px;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    transform: translateY(-100%); visibility: hidden; pointer-events: none;
+    color: var(--text-3); font-size: 13px; font-weight: 600;
+  }
+  .pull-refresh.visible { visibility: visible; }
+  .pull-refresh-icon { display: inline-block; font-size: 20px; line-height: 1; }
+  .pull-refresh.refreshing .pull-refresh-icon { animation: spin 0.8s linear infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .page { transition: none; }
+    .pull-refresh.refreshing .pull-refresh-icon { animation: none; }
   }
 
   /* ─── HEADER ─── */
@@ -262,7 +279,7 @@ const styles = `
      one question here: is there a code left for me. */
   @font-face {
     font-family: 'Pill DM Sans'; src: url('${pillFont}') format('woff2');
-    font-weight: 700; font-display: swap;
+    font-weight: 900; font-display: swap;
   }
   .hero { margin-bottom: 16px; text-align: center; }
   .hero-headline {
@@ -277,7 +294,7 @@ const styles = `
   }
   .hero-num {
     max-width: 60%; font-family: 'Pill DM Sans', var(--font);
-    font-size: 5cqw; font-weight: 700; line-height: 1.1;
+    font-size: 5cqw; font-weight: 900; line-height: 1.1;
     letter-spacing: 0; color: #098451;
     /* Keyed on the avail/total pair in the JSX below, so React remounts this node
        (and replays the animation) whenever the count actually changes, not on every
@@ -1516,6 +1533,102 @@ export default function App() {
   // Copy-to-clipboard feedback on reveal screen (Fix #12)
   const [copied, setCopied] = useState(false);
 
+  const pageRef = useRef(null);
+  const [pullState, setPullState] = useState("idle");
+  const refreshBlocked = takeBusy || requestBusy || Object.keys(optimistic).length > 0;
+
+  // Ordinary scrolling and bottom-edge bounce stay native. Only a downward drag
+  // that starts at the very top takes over touchmove, including in Telegram/PWA.
+  useEffect(() => {
+    const page = pageRef.current;
+    let start = null;
+    let distance = 0;
+    let frame = null;
+    let refreshing = false;
+    const blocked = () => refreshBlocked || !!document.querySelector(".overlay");
+    const paint = () => page.style.setProperty("--pull-distance", `${distance}px`);
+    // Register before a top-edge gesture begins so the browser knows it can be
+    // cancelled. Remove it below the top to keep normal scrolling off this path.
+    const syncMove = () => {
+      if (window.scrollY <= 0) page.addEventListener("touchmove", move, { passive: false });
+      else page.removeEventListener("touchmove", move);
+    };
+    const detach = () => {
+      document.removeEventListener("touchend", end);
+      document.removeEventListener("touchcancel", cancel);
+    };
+    const reset = () => {
+      detach();
+      start = null;
+      distance = 0;
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
+      page.classList.remove("is-pulling");
+      paint();
+      setPullState("idle");
+    };
+    function move(event) {
+      if (!start) return;
+      if (event.touches.length !== 1 || blocked() || window.scrollY > 0 || !event.cancelable) {
+        reset();
+        return;
+      }
+      const dy = event.touches[0].clientY - start.y;
+      const dx = event.touches[0].clientX - start.x;
+      if (dy < 0 || Math.abs(dx) > Math.abs(dy)) {
+        reset();
+        return;
+      }
+      event.preventDefault();
+      distance = Math.min(96, Math.max(0, (dy - 8) * 0.5));
+      page.classList.add("is-pulling");
+      setPullState(distance >= 64 ? "ready" : distance > 0 ? "pulling" : "idle");
+      if (frame === null) frame = requestAnimationFrame(() => { frame = null; paint(); });
+    }
+    function end(event) {
+      if (distance > 0 && event.cancelable) event.preventDefault();
+      if (distance < 64 || event.touches.length > 0 || blocked() || window.scrollY > 0) {
+        reset();
+        return;
+      }
+      detach();
+      start = null;
+      refreshing = true;
+      if (frame !== null) cancelAnimationFrame(frame);
+      distance = 64;
+      page.classList.remove("is-pulling");
+      paint();
+      setPullState("refreshing");
+      // Give the refreshing indicator a paint before loading the latest app.
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => window.location.reload());
+      });
+    }
+    function cancel() { reset(); }
+    function begin(event) {
+      if (refreshing) return;
+      reset();
+      if (event.touches.length !== 1 || window.scrollY > 0 || blocked()
+          || event.target.closest("input, textarea, select, [contenteditable]")) return;
+      start = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+      document.addEventListener("touchend", end, { passive: false });
+      document.addEventListener("touchcancel", cancel, { passive: true });
+    }
+    setPullState("idle");
+    page.addEventListener("touchstart", begin, { passive: true });
+    window.addEventListener("scroll", syncMove, { passive: true });
+    syncMove();
+    return () => {
+      page.removeEventListener("touchstart", begin);
+      page.removeEventListener("touchmove", move);
+      window.removeEventListener("scroll", syncMove);
+      detach();
+      if (frame !== null) cancelAnimationFrame(frame);
+      page.classList.remove("is-pulling");
+      page.style.removeProperty("--pull-distance");
+    };
+  }, [refreshBlocked]);
+
   // Holds the pending "Copied ✓" reset timer so repeated copies can't stack
   // independent timers (an earlier one would clear the badge mid-way through a
   // later copy's window). Also lets us cancel it on unmount.
@@ -2340,7 +2453,11 @@ export default function App() {
   return (
     <>
       <style>{styles}</style>
-      <div className="page">
+      <div className="page" ref={pageRef}>
+        <div className={`pull-refresh ${pullState !== "idle" ? "visible" : ""} ${pullState === "refreshing" ? "refreshing" : ""}`} role="status" aria-live="polite">
+          <span className="pull-refresh-icon" aria-hidden="true">↻</span>
+          <span>{pullState === "refreshing" ? "Refreshing..." : pullState === "ready" ? "Release to refresh" : "Pull down to refresh"}</span>
+        </div>
 
         {/* ── HEADER ── */}
         <nav className="topbar">
