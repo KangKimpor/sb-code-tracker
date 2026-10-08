@@ -1,6 +1,6 @@
 // Version 1.3.0
 import { useState, useEffect, useRef } from "react";
-import pillArtwork from "./assets/pchum-ben-pill.webp";
+import pillArtwork from "./assets/pchum-ben-pill-festive.webp";
 import pillFont from "./assets/dm-sans-bold.woff2";
 import headerRing from "./assets/header-ring-hq.webp";
 import { suggestDeviceName } from "./deviceNames";
