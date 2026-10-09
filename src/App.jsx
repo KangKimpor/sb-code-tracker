@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import pillArtwork from "./assets/pchum-ben-pill.webp";
 import pillFont from "./assets/dm-sans-bold.woff2";
 import headerRing from "./assets/header-ring-hq.webp";
+import headerArmouredMan from "./assets/header-armoured-man.png";
 import { suggestDeviceName } from "./deviceNames";
 import { toMs, csvSafe } from "./security.js";
 import { unavailableInventory } from "./codeLoadState.js";
@@ -231,7 +232,7 @@ const styles = `
   }
 
   .logo-wrap {
-    width: 180px; max-width: 100%;
+    width: 180px; max-width: calc(100% - 166px);
     background: none; border: none; padding: 0;
     flex-shrink: 0; cursor: pointer; font: inherit;
     display: flex; align-items: center;
@@ -241,6 +242,9 @@ const styles = `
   .logo-wrap:active { transform: scale(0.97); background: var(--track-press); border-radius: 12px; }
 
   .logo-img { width: 100%; height: auto; object-fit: contain; display: block; }
+
+  .header-artwork { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .header-armoured-man { display: block; width: 80px; height: 100px; object-fit: contain; }
 
   .header-capsules {
     width: 64px; height: 64px; flex-shrink: 0; overflow: hidden; border-radius: 50%;
@@ -575,6 +579,9 @@ const styles = `
                calc(36px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
     }
     .topbar { gap: 11px; padding: 18px 2px 16px; }
+    .logo-wrap { max-width: calc(100% - 137px); }
+    .header-artwork { gap: 6px; }
+    .header-armoured-man { width: 64px; height: 80px; }
     .header-capsules { width: 56px; height: 56px; }
     .hero-sub { font-size: 14px; }
     .seg { font-size: 13.5px; padding: 8px 4px; }
@@ -2344,13 +2351,16 @@ export default function App() {
           >
             <img src="/singbuild-logo.png" alt="Singbuild" width="682" height="185" className="logo-img" draggable="false" />
           </button>
-          <div className="header-capsules" aria-hidden="true">
-            <picture>
-              <source media="(prefers-reduced-motion: reduce)" srcSet="/header-ring-poster.webp" />
-              {/* eslint-disable-next-line react/no-unknown-property -- React 18 forwards this native attribute in lowercase. */}
-              <img src={headerRing} alt="" width="256" height="256" decoding="async" fetchpriority="low"
-                onError={event => { event.currentTarget.hidden = true; }} />
-            </picture>
+          <div className="header-artwork" aria-hidden="true">
+            <img className="header-armoured-man" src={headerArmouredMan} alt="" width="1120" height="1400" draggable="false" />
+            <div className="header-capsules">
+              <picture>
+                <source media="(prefers-reduced-motion: reduce)" srcSet="/header-ring-poster.webp" />
+                {/* eslint-disable-next-line react/no-unknown-property -- React 18 forwards this native attribute in lowercase. */}
+                <img src={headerRing} alt="" width="256" height="256" decoding="async" fetchpriority="low"
+                  onError={event => { event.currentTarget.hidden = true; }} />
+              </picture>
+            </div>
           </div>
           <div className="brand-meta">
             {isAdmin && (
