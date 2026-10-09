@@ -35,7 +35,7 @@ beforeEach(async () => {
   }));
 });
 after(async () => { await env?.cleanup(); });
-test("compatible claims wait for confirmation and concurrent requests have one winner", async () => {
+test("concurrent compatible writes have one confirmed winner", async () => {
   const one = env.unauthenticatedContext().firestore(), two = env.unauthenticatedContext().firestore();
   const results = await Promise.allSettled([
     claimCode(one, row, "One", "device-one", "2026-10"),
@@ -47,13 +47,15 @@ test("compatible claims wait for confirmation and concurrent requests have one w
   assert.ok(loser.message === "already_taken" || loser.code === "permission-denied");
   assert.equal((await getDoc(doc(one, "codes/current"))).data().status, "taken");
 });
-test("a stale month or nonexistent code does not reveal a voucher or change the record", async () => {
+test("a wrong month cannot queue a reveal and a nonexistent code cannot be saved", async () => {
   const client = env.unauthenticatedContext().firestore();
-  await assert.rejects(claimCode(client, row, "Staff", "device", "2026-11"), /wrong_month/);
+  let revealed = false;
+  await assert.rejects(claimCode(client, row, "Staff", "device", "2026-11", () => { revealed = true; }), /wrong_month/);
+  assert.equal(revealed, false);
   await assert.rejects(claimCode(client, { ...row, id: "missing" }, "Staff", "device", "2026-10"));
   assert.equal((await getDoc(doc(client, "codes/current"))).data().status, "available");
 });
-test("stale cached voucher data cannot claim or reveal the wrong code", async () => {
+test("stale cached voucher data cannot overwrite server inventory", async () => {
   const client = env.unauthenticatedContext().firestore();
   for (const stale of [{ code: "OLD-VOUCHER" }, { createdAt: 0 }, { monthKey: "2026-09" }]) {
     await assert.rejects(claimCode(client, { ...row, ...stale }, "Staff", "device", stale.monthKey || "2026-10"));
@@ -68,15 +70,29 @@ test("legacy unlabelled vouchers remain claimable", async () => {
   }));
   assert.equal(await claimCode(env.unauthenticatedContext().firestore(), legacy, "Staff", "device", "2026-10"), legacy.code);
 });
-test("a locally queued claim does not reveal until the server confirms", async () => {
+test("a queued claim reveals immediately while server confirmation is pending", async () => {
   const client = env.unauthenticatedContext().firestore();
   await getDoc(doc(client, "codes/current"));
   await disableNetwork(client);
-  let revealed = false;
-  const pending = claimCode(client, row, "Staff", "device", "2026-10").then(value => { revealed = true; return value; });
+  let revealed = null;
+  let confirmed = false;
+  const pending = claimCode(client, row, "Staff", "device", "2026-10", code => { revealed = code; })
+    .then(value => { confirmed = true; return value; });
   try {
+    assert.equal(revealed, row.code);
     await getDoc(doc(client, "codes/current"));
-    assert.equal(revealed, false);
+    assert.equal(confirmed, false);
+    assert.equal((await getDoc(doc(client, "codes/current"))).data().status, "taken");
   } finally { await enableNetwork(client); }
   assert.equal(await pending, row.code);
+  assert.equal(confirmed, true);
+});
+
+test("an immediately revealed competing claim still reports its server rejection", async () => {
+  const client = env.unauthenticatedContext().firestore();
+  await claimCode(env.unauthenticatedContext().firestore(), row, "Winner", "winner-device", "2026-10");
+  let revealed = null;
+  await assert.rejects(claimCode(client, row, "Loser", "loser-device", "2026-10", code => { revealed = code; }), { code: "permission-denied" });
+  assert.equal(revealed, row.code);
+  assert.equal((await getDoc(doc(client, "codes/current"))).data().takenBy, "Winner");
 });

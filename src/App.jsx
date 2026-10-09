@@ -1522,20 +1522,18 @@ export default function App() {
   const [lastRequest, setLastRequest] = useState(readLastRequest);
   const [requestBusy, setRequestBusy] = useState(false);
 
-  // Revealed code after successful Take (Fix #11)
+  // Reveal as soon as the claim is queued; persistence finishes in the background.
   const [revealedCode, setRevealedCode] = useState(null);
 
-  // True while the Take transaction is in flight. Prevents showing the reveal
-  // screen before the server has actually confirmed the code, and disables the
-  // Confirm button so it can't be double-tapped (Fix #13)
-  const [takeBusy, setTakeBusy] = useState(false);
+  // A synchronous guard stops double taps while allowing other codes to be claimed.
+  const pendingClaims = useRef(new Set());
 
   // Copy-to-clipboard feedback on reveal screen (Fix #12)
   const [copied, setCopied] = useState(false);
 
   const pageRef = useRef(null);
   const [pullState, setPullState] = useState("idle");
-  const refreshBlocked = takeBusy || requestBusy || Object.keys(optimistic).length > 0;
+  const refreshBlocked = requestBusy || Object.keys(optimistic).length > 0;
 
   // Ordinary scrolling and bottom-edge bounce stay native. Only a downward drag
   // that starts at the very top takes over touchmove, including in Telegram/PWA.
@@ -1868,20 +1866,34 @@ export default function App() {
   };
 
   const takeCode = async (id, name) => {
-    if (takeBusy) return;
+    if (pendingClaims.current.has(id)) return;
     if (!navigator.onLine) { setTakeError("You're offline. Reconnect to claim this code."); return; }
-    setTakeBusy(true); setTakeError("");
+    pendingClaims.current.add(id);
+    setTakeError("");
     const deviceId = getDeviceId();
+    let queued = false;
     try {
-      const claimedCode = await claimCode(db, codes.find(c => c.id === id), name, deviceId, nowMonth);
-      writeLocal(LS_STAFF_NAME, JSON.stringify({ deviceId, name }));
-      setRevealedCode({ code: claimedCode, name });
-      setStaffName("");
+      const claimedCode = await claimCode(db, codes.find(c => c.id === id), name, deviceId, nowMonth, code => {
+        queued = true;
+        setOptimistic(prev => ({ ...prev, [id]: { status: STATUS.TAKEN, takenBy: name, takenAt: Date.now(), takenDevice: deviceId } }));
+        writeLocal(LS_STAFF_NAME, JSON.stringify({ deviceId, name }));
+        setRevealedCode({ id, code, name });
+        setStaffName("");
+      });
       log("take", name + " took " + claimedCode);
     } catch (err) {
       console.error("Code claim failed:", err);
-      setTakeError(err.message === "already_taken" || err.code === "permission-denied" ? "This code is no longer available. Please choose another." : "Could not claim this code. Please try again.");
-    } finally { setTakeBusy(false); }
+      const message = err.message === "already_taken" || err.code === "permission-denied" ? "This code is no longer available. Please choose another." : "Could not save this claim. Please try again.";
+      if (queued) {
+        setRevealedCode(current => current?.id === id ? null : current);
+        setTakeModal(current => current?.id === id ? null : current);
+        // Also report failures after the user has already closed the reveal screen.
+        alert(message);
+      } else { setTakeError(message); }
+    } finally {
+      pendingClaims.current.delete(id);
+      setOptimistic(prev => { const next = { ...prev }; delete next[id]; return next; });
+    }
   };
 
   const requestTopup = async () => {
@@ -2550,7 +2562,7 @@ export default function App() {
         <div className="overlay" onClick={() => { setTakeModal(null); setStaffName(""); setRevealedCode(null); setTakeError(""); setCopied(false); }}>
           <div className={`modal${revealedCode ? " reveal-modal" : ""}`} onClick={e => e.stopPropagation()}>
             {revealedCode ? (
-              /* Reveal screen, shown after successful Take (Fix #11) */
+              /* Reveal screen, shown immediately when Take is queued */
               <div className="reveal-screen">
                 <div className="reveal-label">Your Code</div>
                 <div className="reveal-code">{revealedCode.code}</div>
@@ -2579,18 +2591,17 @@ export default function App() {
                 <label className="f-label">Your Name</label>
                 <input className="f-input" type="text" autoComplete="name" maxLength={60} placeholder="e.g. Kimtong, Sothea, Hongsrun…"
                   value={staffName} onChange={e => setStaffName(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && staffName.trim() && !takeBusy && takeCode(takeModal.id, staffName.trim())}
-                  disabled={takeBusy}
+                  onKeyDown={e => e.key === "Enter" && staffName.trim() && takeCode(takeModal.id, staffName.trim())}
                   autoFocus={!staffName} />
                 {takeError && (
                   <div className="take-error">{takeError}</div>
                 )}
                 <div className="m-actions">
-                  <button className="btn-sec" disabled={takeBusy}
+                  <button className="btn-sec"
                     onClick={() => { setTakeModal(null); setStaffName(""); setTakeError(""); }}>Cancel</button>
-                  <button className="btn-pri green" disabled={!staffName.trim() || takeBusy}
+                  <button className="btn-pri green" disabled={!staffName.trim()}
                     onClick={() => staffName.trim() && takeCode(takeModal.id, staffName.trim())}>
-                    {takeBusy ? "Confirming…" : "Confirm & Reveal"}
+                    Confirm & Reveal
                   </button>
                 </div>
               </>
