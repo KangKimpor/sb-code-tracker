@@ -1,11 +1,12 @@
 import test, { before, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc, disableNetwork, enableNetwork } from "firebase/firestore";
 import { claimCode } from "../src/claimCode.js";
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) throw new Error("Run with npm run test:security, never against production.");
 let env;
+const row = { id: "current", code: "TEST-VOUCHER", monthKey: "2026-10", status: "available", createdAt: 1 };
 // The compatibility claim is tested with the deployed rule's available-to-taken constraint.
 const rules = `rules_version = '2';
 service cloud.firestore { match /databases/{database}/documents {
@@ -15,7 +16,7 @@ service cloud.firestore { match /databases/{database}/documents {
       && request.resource.data.status == 'taken'
       && request.resource.data.code == resource.data.code
       && request.resource.data.createdAt == resource.data.createdAt
-      && request.resource.data.monthKey == resource.data.monthKey
+      && request.resource.data.get('monthKey', '') == resource.data.get('monthKey', '')
       && request.resource.data.takenAt == request.time
       && request.resource.data.takenBy is string
       && request.resource.data.takenBy.size() > 0
@@ -37,8 +38,8 @@ after(async () => { await env?.cleanup(); });
 test("compatible claims wait for confirmation and concurrent requests have one winner", async () => {
   const one = env.unauthenticatedContext().firestore(), two = env.unauthenticatedContext().firestore();
   const results = await Promise.allSettled([
-    claimCode(one, "current", "One", "device-one", "2026-10"),
-    claimCode(two, "current", "Two", "device-two", "2026-10"),
+    claimCode(one, row, "One", "device-one", "2026-10"),
+    claimCode(two, row, "Two", "device-two", "2026-10"),
   ]);
   assert.equal(results.filter(r => r.status === "fulfilled").length, 1);
   assert.equal(results.find(r => r.status === "fulfilled").value, "TEST-VOUCHER");
@@ -48,7 +49,34 @@ test("compatible claims wait for confirmation and concurrent requests have one w
 });
 test("a stale month or nonexistent code does not reveal a voucher or change the record", async () => {
   const client = env.unauthenticatedContext().firestore();
-  await assert.rejects(claimCode(client, "current", "Staff", "device", "2026-11"), /wrong_month/);
-  await assert.rejects(claimCode(client, "missing", "Staff", "device", "2026-10"), /already_taken/);
+  await assert.rejects(claimCode(client, row, "Staff", "device", "2026-11"), /wrong_month/);
+  await assert.rejects(claimCode(client, { ...row, id: "missing" }, "Staff", "device", "2026-10"));
   assert.equal((await getDoc(doc(client, "codes/current"))).data().status, "available");
+});
+test("stale cached voucher data cannot claim or reveal the wrong code", async () => {
+  const client = env.unauthenticatedContext().firestore();
+  for (const stale of [{ code: "OLD-VOUCHER" }, { createdAt: 0 }, { monthKey: "2026-09" }]) {
+    await assert.rejects(claimCode(client, { ...row, ...stale }, "Staff", "device", stale.monthKey || "2026-10"));
+  }
+  assert.equal((await getDoc(doc(client, "codes/current"))).data().status, "available");
+});
+test("legacy unlabelled vouchers remain claimable", async () => {
+  const legacy = { ...row, id: "legacy" };
+  delete legacy.monthKey;
+  await env.withSecurityRulesDisabled(context => setDoc(doc(context.firestore(), "codes/legacy"), {
+    code: legacy.code, status: legacy.status, createdAt: legacy.createdAt, takenBy: null, takenAt: null,
+  }));
+  assert.equal(await claimCode(env.unauthenticatedContext().firestore(), legacy, "Staff", "device", "2026-10"), legacy.code);
+});
+test("a locally queued claim does not reveal until the server confirms", async () => {
+  const client = env.unauthenticatedContext().firestore();
+  await getDoc(doc(client, "codes/current"));
+  await disableNetwork(client);
+  let revealed = false;
+  const pending = claimCode(client, row, "Staff", "device", "2026-10").then(value => { revealed = true; return value; });
+  try {
+    await getDoc(doc(client, "codes/current"));
+    assert.equal(revealed, false);
+  } finally { await enableNetwork(client); }
+  assert.equal(await pending, row.code);
 });

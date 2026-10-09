@@ -1869,17 +1869,18 @@ export default function App() {
 
   const takeCode = async (id, name) => {
     if (takeBusy) return;
+    if (!navigator.onLine) { setTakeError("You're offline. Reconnect to claim this code."); return; }
     setTakeBusy(true); setTakeError("");
     const deviceId = getDeviceId();
     try {
-      const claimedCode = await claimCode(db, id, name, deviceId, nowMonth);
+      const claimedCode = await claimCode(db, codes.find(c => c.id === id), name, deviceId, nowMonth);
       writeLocal(LS_STAFF_NAME, JSON.stringify({ deviceId, name }));
       setRevealedCode({ code: claimedCode, name });
       setStaffName("");
       log("take", name + " took " + claimedCode);
     } catch (err) {
       console.error("Code claim failed:", err);
-      setTakeError(err.message === "already_taken" ? "This code was just taken. Please choose another." : "Could not claim this code. Please try again.");
+      setTakeError(err.message === "already_taken" || err.code === "permission-denied" ? "This code is no longer available. Please choose another." : "Could not claim this code. Please try again.");
     } finally { setTakeBusy(false); }
   };
 
