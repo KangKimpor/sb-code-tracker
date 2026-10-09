@@ -44,11 +44,7 @@ jobs:
       - run: npm test
       - run: npm run test:security
       - run: npm run build
-      - name: Report pending security rollout
-        if: vars.SECURITY_BACKEND_READY != 'true'
-        run: echo "::notice::Hosting deployment is paused until the server PIN, backend, rules and inventory migration are ready."
       - uses: FirebaseExtended/action-hosting-deploy@7c850a480ce753f4f06f010801fc5a43787740bb # v0
-        if: vars.SECURITY_BACKEND_READY == 'true'
         with:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           projectId: sb-code-tracker

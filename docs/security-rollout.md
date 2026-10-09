@@ -14,7 +14,7 @@ Firebase credentials must be renewed (`npx --yes firebase-tools@15.33.0 login --
 4. Deploy the backend and rules: `npx --yes firebase-tools@15.33.0 deploy --only functions,firestore:rules --project sb-code-tracker`. This briefly disables claims in the old website; perform the remaining steps in the same maintenance window.
 5. With Application Default Credentials for this project, run `npm --prefix functions run migrate -- sb-code-tracker`. This creates safe inventory copies using fresh transactional reads and preserves all original code records. Do not reopen staff access until inventory counts and a sample have been checked.
 6. Deploy the new website: `npx --yes firebase-tools@15.33.0 deploy --only hosting --project sb-code-tracker`. Verify a staff claim, PIN rejection and acceptance, release/history, bulk add/delete, top-up request and CSV export. Verify logout and session expiry remove admin access. Staff must not read `codes`, history or logs directly.
-7. Set the GitHub repository variable `SECURITY_BACKEND_READY=true` after these checks so the existing Hosting workflow can publish subsequent changes. Remove the obsolete `VITE_ADMIN_PIN` secret from GitHub and any hosting build settings.
+7. Set `SECURITY_BACKEND_READY=true` in Vercel and the GitHub repository variable after these checks so the secured frontend passes the build check on both hosts. Remove the obsolete `VITE_ADMIN_PIN` secret from GitHub and any hosting build settings.
 8. Enable Firestore TTL on `expiresAt` for `_rateLimits` and `_requestCooldowns` to clean old rate buckets. Monitor billing and function errors.
 
 ## Limits and existing records

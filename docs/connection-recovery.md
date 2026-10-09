@@ -6,6 +6,8 @@ The production recovery restores the client compatible with the existing deploye
 
 `npm run build` now blocks a frontend importing Firebase Functions unless `SECURITY_BACKEND_READY=true`. This check runs on Vercel as well as GitHub, so the server-dependent frontend cannot be automatically published before backend readiness is confirmed.
 
+Every push to `master` automatically publishes the compatible frontend through both the Vercel integration and the Firebase Hosting workflow. Firebase publishes to the live site shared by its `web.app` and `firebaseapp.com` domains. Both services deploy the same commit independently, so completion times can differ. The build check above protects a future secured frontend without blocking compatible website updates.
+
 The server security implementation remains in `functions/` and `firestore.rules`, but is not live. The secured frontend remains available in commit `5214624`. When billing and backend prerequisites are ready, deploy the functions and rules, migrate inventory, restore `src/App.jsx` from that commit, and set `SECURITY_BACKEND_READY=true` in Vercel and the GitHub repository only after verifying the backend. Publish the secured frontend in the same maintenance window, retaining the failed-load display fix. Do not deploy the new rules while the compatibility client is still serving staff.
 
 The compatibility client uses the prior browser PIN and anonymous Firestore access. Those legacy security limitations remain until the coordinated server rollout; this recovery restores service and does not claim that server-enforced admin access is active. No production claim, deletion, PIN change, or database mutation was performed to verify the fix.
