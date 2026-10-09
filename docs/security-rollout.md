@@ -4,6 +4,8 @@ Staff access stays open. The PIN screen now gets a one-hour admin session from t
 
 ## Before production
 
+The live frontend currently uses the compatibility recovery described in [connection-recovery.md](connection-recovery.md). Restore the secured `src/App.jsx` from commit `5214624` only during the coordinated backend rollout. The build requires `SECURITY_BACKEND_READY=true` in Vercel (and the GitHub repository variable) for that secured frontend. Retain the newer failed-load UI correction when restoring it.
+
 Firebase credentials must be renewed (`npx --yes firebase-tools@15.33.0 login --reauth`). No live resources have been changed by this patch. Take a Firestore backup before rollout. Functions and the scheduler require a billing-enabled Firebase project. Enable Firebase Authentication (custom-token sign-in needs no Google or email provider), and confirm the runtime service account can sign custom tokens (Service Account Token Creator / IAM signBlob permission). Keep the existing six-digit admin PIN, as requested; changing it is not required.
 
 1. Install both lockfiles: `npm ci` and `npm ci --prefix functions`.

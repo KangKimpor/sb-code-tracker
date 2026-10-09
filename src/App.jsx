@@ -4,14 +4,17 @@ import pillArtwork from "./assets/pchum-ben-pill.webp";
 import pillFont from "./assets/dm-sans-bold.woff2";
 import headerRing from "./assets/header-ring-hq.webp";
 import { suggestDeviceName } from "./deviceNames";
+import { toMs, csvSafe } from "./security.js";
+import { unavailableInventory } from "./codeLoadState.js";
+import { claimCode } from "./claimCode.js";
 import { Analytics } from "@vercel/analytics/react";
 import { initializeApp } from "firebase/app";
-import { getAuth, setPersistence, browserSessionPersistence, signInWithCustomToken, onIdTokenChanged, signOut } from "firebase/auth";
-import { getFunctions, httpsCallable } from "firebase/functions";
-import { toMs, csvSafe } from "./security.js";
 import {
-  initializeFirestore, collection, onSnapshot,
-  query, orderBy, limit, where, getDocsFromServer, Timestamp
+  initializeFirestore, persistentLocalCache, persistentSingleTabManager,
+  collection, onSnapshot,
+  addDoc, updateDoc, deleteDoc, doc,
+  query, orderBy, limit, where,
+  serverTimestamp, getDocs, getDocsFromServer, writeBatch, Timestamp
 } from "firebase/firestore";
 
 // 🔥 Firebase config loaded from environment variables
@@ -27,22 +30,11 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-// Private admin data stays in memory rather than surviving logout on a shared device.
-const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
-const auth = getAuth(app);
-const authReady = setPersistence(auth, browserSessionPersistence);
-const tracker = httpsCallable(getFunctions(app, "us-central1"), "tracker");
-async function callTracker(action, data = {}) {
-  return (await tracker({ action, ...data })).data;
-}
-async function exitAdmin() {
-  try { await signOut(auth); } finally { window.location.reload(); }
-}
-const inventoryRef = collection(db, "codeInventory");
-function codesQuery(admin, month) {
-  // shortcut: current and legacy staff inventory is capped at 2,000 rows; paginate for larger pools.
-  return admin ? codesRef : query(inventoryRef, where("monthKey", "in", [month, ""]), limit(2000));
-}
+// Preserve the compatible client's cache and network fallback while backend rollout is pending.
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
+  experimentalAutoDetectLongPolling: true,
+});
 const codesRef = collection(db, "codes");
 const logsRef = collection(db, "activityLog");
 const releaseHistRef = collection(db, "releaseHistory");
@@ -72,6 +64,13 @@ const LS_DEVICE = "sbGrabDeviceId";
 const LS_REQUEST = "sbGrabLastRequest";
 const LS_STAFF_NAME = "sbGrabStaffName";
 
+// ⚠️ NOT A SECURITY BOUNDARY. Vite inlines every VITE_* variable into the public
+// bundle at build time, so whatever value this resolves to is readable by anyone
+// via DevTools, verified by grepping the built output. `isAdmin` is also plain
+// React state and can be flipped in React DevTools without the PIN at all.
+// This only prevents accidental clicks on admin controls.
+// Real admin gating requires Firebase Auth + custom claims enforced in firestore.rules.
+const ADMIN_PIN = import.meta.env.VITE_ADMIN_PIN || "782945"; // CHANGE THIS or set VITE_ADMIN_PIN in .env
 const STATUS = { AVAILABLE: "available", TAKEN: "taken" };
 
 const styles = `
@@ -1261,7 +1260,7 @@ function formatTimeShort(ts) {
 // makes plain string comparison chronological too ("2026-09" > "2026-08" > "2026-07"),
 // so no date parsing is needed to decide whether a code is live, scheduled, or dead.
 //
-// The backend and staff month use ICT (UTC+7), independently of the device timezone.
+// Staff months use ICT regardless of the device's timezone.
 function monthKeyOf(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
@@ -1348,6 +1347,17 @@ function monthExpiry(month) {
   return { text: `Expire in ${days} days (${label})`, urgent: days <= 3, days, label };
 }
 
+// Masks an unclaimed code. Shows enough of the prefix to tell codes apart in a list
+// while keeping the rest unguessable, and never more than half the string, so a short
+// sequential code like "SB-001" does not end up effectively printed in full.
+//
+// This is presentational only. The full value is already on the device, because the
+// listener downloads the whole collection (known risk #2 in the steering doc).
+function maskCode(code) {
+  const visible = Math.min(5, Math.ceil(code.length / 2));
+  return code.slice(0, visible) + "\u2022".repeat(Math.max(code.length - visible, 1));
+}
+
 // Human-readable list of the drops a set of codes came from, for log lines and the
 // expired-codes notice. Unlabelled codes have no month to name, so they're called out
 // as such rather than being silently attributed to one.
@@ -1416,6 +1426,19 @@ function readLastRequest() {
   } catch { return null; }
 }
 
+// Write a log entry to Firestore only. onSnapshot keeps local state in sync (Fix #3).
+// Module-level because it closes over nothing but `logsRef`: that keeps it out of the
+// dependency array of the cleanup effect, which would otherwise re-run on
+// every render (it would be a new function identity each time).
+// Intentionally swallows errors: audit logging must never block a staff member.
+// deviceId is stamped on every entry (staff takes and admin actions alike) so the
+// admin can tell which browser did what without it depending on the free-text name
+// typed into the take modal. Calling getDeviceId() here rather than threading it
+// through every call site keeps every existing call to log() correct for free.
+function log(type, text) {
+  addDoc(logsRef, { type, text, ts: Date.now(), deviceId: getDeviceId() }).catch(() => {});
+}
+
 function codesFromSnapshot(snapshot) {
   return snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
@@ -1430,7 +1453,14 @@ export default function App() {
   const [connError, setConnError] = useState(false);
   const [codesSubscription, setCodesSubscription] = useState(0);
   const codesListening = useRef(false);
-  // Cache metadata plus browser connectivity distinguishes an offline view.
+  // OFFLINE FIX: persistentLocalCache (added for the "Fix lag" perf change) means
+  // onSnapshot's success callback now fires from the local cache even with zero
+  // connectivity, so `err` never fires and `loading`/`connError` stop being a reliable
+  // proxy for "we can actually reach Firestore right now". `isStale` tracks that gap:
+  // true whenever the most recent snapshot came from cache AND the browser reports
+  // offline. It does not replace connError (a real listener error is still a real error);
+  // it exists so the cleanup sweep, which writes deletes, can refuse to run on data it
+  // cannot confirm is current. See the codes listener and the sweep effect below.
   const [isStale, setIsStale] = useState(false);
   const [filter, setFilter] = useState("available");
   const [isAdmin, setIsAdmin] = useState(false);
@@ -1440,7 +1470,6 @@ export default function App() {
   const [pinModal, setPinModal] = useState(false);
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState("");
-  const [pinBusy, setPinBusy] = useState(false);
 
   const [takeModal, setTakeModal] = useState(null);
   const [staffName, setStaffName] = useState("");
@@ -1578,7 +1607,7 @@ export default function App() {
       const timeout = new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error("Refresh timed out")), 8000);
       });
-      Promise.race([getDocsFromServer(codesQuery(isAdmin, nowMonth)), timeout]).then(snapshot => {
+      Promise.race([getDocsFromServer(codesRef), timeout]).then(snapshot => {
         if (disposed) return;
         setCodes(codesFromSnapshot(snapshot));
         setLoading(false);
@@ -1624,7 +1653,7 @@ export default function App() {
       page.classList.remove("is-pulling");
       page.style.removeProperty("--pull-distance");
     };
-  }, [refreshBlocked, isAdmin, nowMonth]);
+  }, [refreshBlocked]);
 
   // Holds the pending "Copied ✓" reset timer so repeated copies can't stack
   // independent timers (an earlier one would clear the badge mid-way through a
@@ -1691,9 +1720,7 @@ export default function App() {
     // on. fromCache alone is not enough, a healthy online listener also serves its very
     // first paint from cache before the server ack lands, so it is paired with
     // navigator.onLine: only "from cache" AND "browser reports offline" counts as stale.
-    setCodes([]);
-    setLoading(true);
-    const unsub = onSnapshot(codesQuery(isAdmin, nowMonth), { includeMetadataChanges: true }, snap => {
+    const unsub = onSnapshot(codesRef, { includeMetadataChanges: true }, snap => {
       // `|| 0` keeps the comparator consistent if a doc was added outside the app
       // (e.g. via the Firebase console) and has no createdAt. Otherwise NaN makes
       // the sort order implementation-defined.
@@ -1709,11 +1736,11 @@ export default function App() {
       setConnError(true);
     });
     return () => { codesListening.current = false; unsub(); };
-  }, [codesSubscription, isAdmin, nowMonth]);
+  }, [codesSubscription]);
 
   // Firebase real-time listener: activity log (lazy: only when Code Manager open) (Fix #7)
   useEffect(() => {
-    if (!codeManager || !isAdmin) return;
+    if (!codeManager) return;
     const cutoff = Date.now() - MONTH_MS;
     const q = query(logsRef, where("ts", ">", cutoff), orderBy("ts", "desc"), limit(200));
     const unsub = onSnapshot(q, snap => {
@@ -1721,11 +1748,11 @@ export default function App() {
       setActLog(data);
     }, err => console.error("activity log listener failed:", err));
     return () => unsub();
-  }, [codeManager, isAdmin]);
+  }, [codeManager]);
 
   // Firebase real-time listener: release history (lazy: only when Code Manager open) (Fix #7)
   useEffect(() => {
-    if (!codeManager || !isAdmin) return;
+    if (!codeManager) return;
     const cutoff = Date.now() - MONTH_MS;
     // releasedAt is written with serverTimestamp(), i.e. a Firestore Timestamp.
     // Firestore range scans are confined to the bound's own type, so comparing
@@ -1738,7 +1765,7 @@ export default function App() {
       setReleaseHistory(data);
     }, err => console.error("release history listener failed:", err));
     return () => unsub();
-  }, [codeManager, isAdmin]);
+  }, [codeManager]);
 
   // Firebase real-time listener: top-up requests (admin only)
   //
@@ -1776,41 +1803,10 @@ export default function App() {
     setDropMonth(prev => (prev < nowMonth ? nowMonth : prev));
   }, [nowMonth]);
 
-  // Admin access is backed by a one-hour server claim; UI state cannot grant access.
-  useEffect(() => {
-    let expiry;
-    let disposed = false;
-    const unsub = onIdTokenChanged(auth, async user => {
-      clearTimeout(expiry);
-      const reset = () => {
-        setIsAdmin(false); setCodes([]); setCodeManager(false);
-        setReleaseConfirm(null); setActLog([]); setReleaseHistory([]);
-        setSelectedCodes(new Set()); setTopupRequests([]);
-      };
-      try {
-        const token = user ? await user.getIdTokenResult() : null;
-        if (disposed) return;
-        const until = token?.claims.adminUntil * 1000;
-        if (!Number.isFinite(until) || until <= Date.now()) { reset(); return; }
-        setIsAdmin(true);
-        expiry = setTimeout(() => { reset(); void exitAdmin(); }, until - Date.now());
-      } catch { if (!disposed) reset(); }
-    });
-    return () => { disposed = true; clearTimeout(expiry); unsub(); };
-  }, []);
-
-  const handlePin = async () => {
-    if (pinBusy) return;
-    setPinBusy(true); setPinError("");
-    try {
-      await authReady;
-      const { token } = await callTracker("login", { pin });
-      await signInWithCustomToken(auth, token);
-      setPinModal(false); setPin("");
-    } catch (err) {
-      setPinError(err.code === "functions/unauthenticated" ? "Incorrect PIN. Try again." : err.code === "functions/resource-exhausted" ? "Too many attempts. Please try later." : "Could not check the PIN. Please try again.");
-      setPin("");
-    } finally { setPinBusy(false); }
+  // ── Actions ──
+  const handlePin = () => {
+    if (pin === ADMIN_PIN) { setIsAdmin(true); setPinModal(false); setPin(""); setPinError(""); }
+    else { setPinError("Incorrect PIN. Try again."); setPin(""); }
   };
 
   const addCode = async () => {
@@ -1822,7 +1818,12 @@ export default function App() {
     if (!t || codes.some(c => c.code === t && (c.monthKey || nowMonth) === month)) { setNewCode(""); return; }
     setNewCode("");
     try {
-      await callTracker("add", { codes: [t], monthKey: month });
+      await addDoc(codesRef, {
+        code: t, status: STATUS.AVAILABLE, takenBy: null, takenAt: null,
+        createdAt: Date.now(), monthKey: month
+      });
+      if (month === nowMonth) log("add", `${t} added`);
+      else log("schedule", `${t} scheduled for ${monthLabelShort(month)}`);
     } catch (err) {
       // Previously this rejection was unhandled: the input had already been
       // cleared, so the admin lost their input and was never told it failed.
@@ -1841,9 +1842,24 @@ export default function App() {
     if (!toAdd.length) { setBulkText(""); return; }
     setBulkText("");
     try {
-      for (let i = 0; i < toAdd.length; i += 200) {
-        await callTracker("add", { codes: toAdd.slice(i, i + 200), monthKey: month });
+      // Batched instead of Promise.all: a batch is atomic, so a failure can no
+      // longer leave a partial set of codes written. Also 1 round trip per 400
+      // codes instead of one per code. doc(codesRef) generates the same kind of
+      // auto-ID that addDoc does internally.
+      const base = Date.now();
+      for (let i = 0; i < toAdd.length; i += 400) {
+        const batch = writeBatch(db);
+        toAdd.slice(i, i + 400).forEach((code, j) => {
+          batch.set(doc(codesRef), {
+            code, status: STATUS.AVAILABLE, takenBy: null, takenAt: null,
+            createdAt: base + i + j,   // same increasing sequence as before, preserves paste order
+            monthKey: month
+          });
+        });
+        await batch.commit();
       }
+      if (month === nowMonth) log("bulk", `${toAdd.length} code(s) bulk-added`);
+      else log("schedule", `${toAdd.length} code(s) scheduled for ${monthLabelShort(month)}`);
     } catch (err) {
       console.error("addBulk failed:", err);
       setBulkText(toAdd.join("\n"));   // restore so a long paste isn't lost
@@ -1856,14 +1872,14 @@ export default function App() {
     setTakeBusy(true); setTakeError("");
     const deviceId = getDeviceId();
     try {
-      const requestId = takeModal?.requestId || crypto.randomUUID();
-      setTakeModal(previous => previous ? { ...previous, requestId } : previous);
-      const result = await callTracker("claim", { id, name, deviceId, requestId });
+      const claimedCode = await claimCode(db, id, name, deviceId, nowMonth);
       writeLocal(LS_STAFF_NAME, JSON.stringify({ deviceId, name }));
-      setRevealedCode({ code: result.code, name: result.name });
+      setRevealedCode({ code: claimedCode, name });
       setStaffName("");
+      log("take", name + " took " + claimedCode);
     } catch (err) {
-      setTakeError(err.code === "functions/already-exists" ? "This code was just taken. Please choose another." : err.code === "functions/resource-exhausted" ? "Too many attempts. Please try later." : "Could not claim this code. Please try again.");
+      console.error("Code claim failed:", err);
+      setTakeError(err.message === "already_taken" ? "This code was just taken. Please choose another." : "Could not claim this code. Please try again.");
     } finally { setTakeBusy(false); }
   };
 
@@ -1872,10 +1888,10 @@ export default function App() {
     setRequestBusy(true);
     const entry = { monthKey: nowMonth, ts: Date.now(), deviceId: getDeviceId() };
     try {
-      const result = await callTracker("requestTopup", { deviceId: entry.deviceId });
+      await addDoc(topupReqRef, entry);
       // Remembered only after the write is confirmed, so a failed request doesn't
       // silently lock the button for the next six hours.
-      const mine = { monthKey: result.monthKey, ts: result.ts };
+      const mine = { monthKey: entry.monthKey, ts: entry.ts };
       setLastRequest(mine);
       writeLocal(LS_REQUEST, JSON.stringify(mine));
     } catch (err) {
@@ -1895,7 +1911,8 @@ export default function App() {
     if (!ids.length) return;
     if (!confirm(`Clear ${ids.length} top-up request(s) for ${monthLabel(nowMonth)}?`)) return;
     try {
-      await callTracker("clearRequests");
+      await deleteIdsIn("topupRequests", ids);
+      log("request", `Cleared ${ids.length} top-up request(s) for ${monthLabelShort(nowMonth)}`);
     } catch (err) {
       console.error("clearTopupRequests failed:", err);
       alert("Failed to clear the requests. Please try again.");
@@ -1903,10 +1920,25 @@ export default function App() {
   };
 
   const releaseCode = async (id) => {
+    const code = releaseConfirm?.code;
+    const by = releaseConfirm?.takenBy;
+    const takenAt = releaseConfirm?.takenAt;
+    const takenDevice = releaseConfirm?.takenDevice;
     setOptimistic(p => ({ ...p, [id]: { status: STATUS.AVAILABLE, takenBy: null, takenAt: null, takenDevice: null } }));
     setReleaseConfirm(null);
     try {
-      await callTracker("release", { id });
+      await updateDoc(doc(db, "codes", id), { status: STATUS.AVAILABLE, takenBy: null, takenAt: null, takenDevice: null });
+      // History is written only AFTER the release is confirmed. Writing it first
+      // meant a failed updateDoc left a permanent record of a release that never
+      // happened. `codes` is the source of truth, so ordering it this way makes a
+      // missing history row the worst case instead of a phantom one.
+      if (code) {
+        // serverTimestamp() for releasedAt, authoritative server time
+        await addDoc(releaseHistRef, {
+          code, takenBy: by || "-", takenAt: takenAt || null, takenDevice: takenDevice || null, releasedAt: serverTimestamp()
+        }).catch(err => console.error("release history write failed:", err));
+      }
+      log("release", `Released ${code}${by ? ` from ${by}` : ""}`);
     } catch (err) {
       // Without this catch the rejection was unhandled and the row silently
       // reverted to "taken" with no explanation to the admin.
@@ -1918,32 +1950,49 @@ export default function App() {
   };
 
   const deleteCode = async (id) => {
+    const c = codes.find(x => x.id === id);
     setSelectedCodes(p => { const n = new Set(p); n.delete(id); return n; });
     try {
-      await callTracker("delete", { ids: [id] });
+      await deleteDoc(doc(db, "codes", id));
+      if (c) log("delete", `Deleted ${c.code}`);
     } catch (err) {
       console.error("deleteCode failed:", err);
       alert("Failed to delete code. Please try again.");
     }
   };
 
-  const deleteCodeIds = async ids => {
-    for (let i = 0; i < ids.length; i += 200) await callTracker("delete", { ids: ids.slice(i, i + 200) });
+  // Batched for the same reasons as addBulk: atomic per chunk, and it stays within
+  // Firestore's 500-operation limit per batch. Takes ids rather than snapshots (unlike
+  // deleteDocsInChunks below) because every caller here works from data already in
+  // state, so there's no getDocs round trip to get DocumentReferences from.
+  const deleteIdsIn = async (collName, ids) => {
+    for (let i = 0; i < ids.length; i += 400) {
+      const batch = writeBatch(db);
+      ids.slice(i, i + 400).forEach(id => batch.delete(doc(db, collName, id)));
+      await batch.commit();
+    }
   };
+
+  const deleteCodeIds = (ids) => deleteIdsIn("codes", ids);
 
   const bulkDelete = async () => {
     const ids = [...selectedCodes];
+    const names = codes.filter(c => ids.includes(c.id)).map(c => c.code);
+    const preview = names.slice(0, 5).join(", ") + (names.length > 5 ? ` +${names.length - 5} more` : "");
     setSelectedCodes(new Set());
     setBulkDelConfirm(false);
     try {
       await deleteCodeIds(ids);
+      log("bulk", `Deleted ${ids.length} code(s): ${preview}`);
     } catch (err) {
       console.error("bulkDelete failed:", err);
       alert("Failed to delete some codes. Please refresh and try again.");
     }
   };
 
-  // Admins can also remove expired codes when no current drop exists.
+  // Manual escape hatch for the automatic cleanup: removes expired codes even when this
+  // month has none of its own yet, which is the one case the sweep deliberately refuses
+  // to touch. Also what an admin reaches for if the sweep failed on a permission error.
   const clearStale = async () => {
     const ids = staleCodes.map(c => c.id);
     if (!ids.length) return;
@@ -1951,6 +2000,7 @@ export default function App() {
     if (!confirm(`Remove ${ids.length} expired code(s) from ${from}? They no longer work. This cannot be undone.`)) return;
     try {
       await deleteCodeIds(ids);
+      log("expire", `Cleared ${ids.length} expired code(s) from ${from}`);
       alert(`✓ Removed ${ids.length} expired code(s).`);
     } catch (err) {
       console.error("clearStale failed:", err);
@@ -1968,9 +2018,12 @@ export default function App() {
     if (!targets.length) return;
     if (!confirm(`Assign ${targets.length} code(s) to ${monthLabel(nowMonth)}? They stay live for the rest of the month, then get removed automatically when it ends.`)) return;
     try {
-      for (let i = 0; i < targets.length; i += 200) {
-        await callTracker("label", { ids: targets.slice(i, i + 200).map(c => c.id) });
+      for (let i = 0; i < targets.length; i += 400) {
+        const batch = writeBatch(db);
+        targets.slice(i, i + 400).forEach(c => batch.update(doc(db, "codes", c.id), { monthKey: nowMonth }));
+        await batch.commit();
       }
+      log("schedule", `Assigned ${targets.length} existing code(s) to ${monthLabelShort(nowMonth)}`);
       alert(`✓ ${targets.length} code(s) assigned to ${monthLabel(nowMonth)}.`);
     } catch (err) {
       console.error("labelUnlabelled failed:", err);
@@ -1986,6 +2039,7 @@ export default function App() {
     if (!confirm(`Remove ${ids.length} code(s) that have no drop month? This cannot be undone.`)) return;
     try {
       await deleteCodeIds(ids);
+      log("delete", `Removed ${ids.length} code(s) with no drop month`);
       alert(`✓ Removed ${ids.length} code(s).`);
     } catch (err) {
       console.error("removeUnlabelled failed:", err);
@@ -1995,12 +2049,13 @@ export default function App() {
 
   // Drops a whole staged month, the fix for "I pasted the wrong list for next month".
   const deleteDrop = async () => {
-    const { ids } = dropDelConfirm || {};
+    const { monthKey, ids } = dropDelConfirm || {};
     if (!ids || !ids.length) { setDropDelConfirm(null); return; }
     setDropDelConfirm(null);
     setSelectedCodes(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
     try {
       await deleteCodeIds(ids);
+      log("delete", `Deleted scheduled drop for ${monthLabelShort(monthKey)}: ${ids.length} code(s)`);
     } catch (err) {
       console.error("deleteDrop failed:", err);
       alert("Failed to delete the scheduled drop. Please try again.");
@@ -2013,18 +2068,53 @@ export default function App() {
   const selTaken = () => setSelectedCodes(new Set(codes.filter(c => c.status === STATUS.TAKEN).map(c => c.id)));
   const selNone = () => setSelectedCodes(new Set());
 
+  // A writeBatch is capped at 500 operations, so a single batch silently breaks
+  // once the backlog grows past it, and log() fires on every add/take/release,
+  // so that happens fast. Committing in chunks keeps pruning usable at any size.
+  // Returns the number of documents deleted.
+  const deleteDocsInChunks = async (docsToDelete) => {
+    for (let i = 0; i < docsToDelete.length; i += 400) {
+      const batch = writeBatch(db);
+      docsToDelete.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+    return docsToDelete.length;
+  };
+
   const clearOldLogs = async () => {
     if (!confirm("Delete all activity logs, release history, and top-up requests older than 30 days? This cannot be undone.")) return;
+    const cutoff = Date.now() - MONTH_MS;
     try {
-      const { logCount, relCount, reqCount } = await callTracker("clearOldLogs");
-      alert("✓ Deleted " + logCount + " old log entries, " + relCount + " old release records, and " + reqCount + " old top-up requests.");
+      // Activity log
+      const logQ = query(logsRef, where("ts", "<", cutoff));
+      const logSnap = await getDocs(logQ);
+      const logCount = await deleteDocsInChunks(logSnap.docs);
+
+      // Release history: previously only hidden from the UI by the listener's
+      // cutoff filter, never actually deleted from Firestore. Prune it here too
+      // so the collection doesn't grow unbounded.
+      // Timestamp bound for the same reason as the listener above: with a plain
+      // number this matched nothing, so pruning always reported 0 records.
+      const relQ = query(releaseHistRef, where("releasedAt", "<", Timestamp.fromMillis(cutoff)));
+      const relSnap = await getDocs(relQ);
+      const relCount = await deleteDocsInChunks(relSnap.docs);
+
+      // Top-up requests. Cleared per month from the manager as they're answered, so this
+      // only catches ones from a month nobody got around to tidying. ts is a plain
+      // number, like activityLog, so the bound is a number too.
+      const reqQ = query(topupReqRef, where("ts", "<", cutoff));
+      const reqSnap = await getDocs(reqQ);
+      const reqCount = await deleteDocsInChunks(reqSnap.docs);
+
+      log("delete", `Cleared ${logCount} old log entry(ies), ${relCount} old release record(s), and ${reqCount} old top-up request(s), older than 30 days`);
+      alert(`✓ Deleted ${logCount} old log entries, ${relCount} old release records, and ${reqCount} old top-up requests.`);
     } catch (err) {
       console.error("Clear logs failed:", err);
       alert("Failed to clear logs. Try again.");
     }
   };
 
-  const exportCSV = async () => {
+  const exportCSV = () => {
     // Exports every code on file, not just the live drop, including staged ones, so the
     // sheet doubles as a record of what's queued. `Drop` is the month the code belongs to
     // (blank for codes added before drop scheduling); `Drop Status` is which bucket it's
@@ -2056,7 +2146,6 @@ export default function App() {
     }
     const csv = rows.map(r => r.map(v => `"${csvSafe(v).replace(/"/g, '""')}"`).join(",")).join("\n");
     try {
-      await callTracker("export");
       // Leading BOM so Excel detects UTF-8 and doesn't mangle non-ASCII staff names
       const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
@@ -2070,6 +2159,7 @@ export default function App() {
       // Revoking synchronously can cancel the download before the browser has
       // finished reading the blob (Safari/Firefox), so defer it instead.
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      log("export", `CSV exported: ${codes.length} codes`);
     } catch (err) {
       console.error("CSV export failed:", err);
       alert("Failed to export CSV. Please try again.");
@@ -2128,6 +2218,7 @@ export default function App() {
   // Recomputed every render, which is what keeps the countdown honest once the ticker
   // rolls `nowMonth` over at midnight on the 1st.
   const expiry = monthExpiry(nowMonth);
+  const unavailable = unavailableInventory(loading, connError, total);
 
   // ── Top-up requests ──
   // Scoped to the live month for the same reason codes are: an unanswered request from
@@ -2230,6 +2321,8 @@ export default function App() {
     emptySub = "Every code for this month has been claimed";
   }
 
+  if (unavailable) { emptyIcon = "↻"; emptyTitle = unavailable.title; emptySub = unavailable.detail; }
+
   return (
     <>
       <style>{styles}</style>
@@ -2244,7 +2337,7 @@ export default function App() {
           <button
             type="button"
             className="logo-wrap"
-            onClick={() => { if (isAdmin) { setIsAdmin(false); setCodes([]); void exitAdmin(); } else setPinModal(true); }}
+            onClick={() => isAdmin ? setIsAdmin(false) : setPinModal(true)}
             title={isAdmin ? "Exit Admin" : "Admin Login"}
             aria-label={isAdmin ? "Exit Admin" : "Admin Login"}
           >
@@ -2277,7 +2370,7 @@ export default function App() {
 
         {connError && (
           <div className="conn-banner">
-            Connection lost. Showing last known data. <button onClick={() => window.location.reload()}>Retry</button>
+            {codes.length ? "Connection lost. Showing last known data." : "Could not connect. Please retry to load your codes."} <button onClick={() => window.location.reload()}>Retry</button>
           </div>
         )}
         {!connError && isStale && (
@@ -2320,7 +2413,7 @@ export default function App() {
           <div className="hero">
             <div className="hero-headline">
               <div key={`${avail}-${total}`} className={`hero-num${avail === 0 ? " none" : ""}`}>
-                {total === 0 ? `No codes for ${monthLabel(nowMonth)}` : <>
+                {unavailable ? unavailable.title : total === 0 ? `No codes for ${monthLabel(nowMonth)}` : <>
                   <span className="hero-count">
                     <span className="hero-count-value">{avail}</span>
                     <span className="hero-count-total">of {total}</span>
@@ -2332,7 +2425,7 @@ export default function App() {
             {(total === 0 || canRequestTopup) && <div className="hero-details">
               {total === 0 && (
                 <div className="hero-sub">
-                  {stagedDrops.length
+                  {unavailable ? unavailable.detail : stagedDrops.length
                     ? `${stagedDrops[0][1].length} ready for ${monthLabel(stagedDrops[0][0])}`
                     : "Waiting for this month's codes"}
                 </div>
@@ -2393,7 +2486,7 @@ export default function App() {
                       style={{ animationDelay: `${Math.min(i * 22, 220)}ms` }}>
                       {/* Fix #11: Mask available codes, only reveal after Take flow */}
                       {c.status === STATUS.AVAILABLE && !isAdmin
-                        ? <span className="t-code-masked">{c.code}</span>
+                        ? <span className="t-code-masked">{maskCode(c.code)}</span>
                         : <span className="t-code">{c.code}</span>
                       }
                       {c.status === STATUS.TAKEN && (
@@ -2445,7 +2538,7 @@ export default function App() {
             <div className="pin-err">{pinError}</div>
             <div className="m-actions">
               <button className="btn-sec" onClick={() => { setPinModal(false); setPin(""); setPinError(""); }}>Cancel</button>
-              <button className="btn-pri blue" onClick={handlePin} disabled={pinBusy}>{pinBusy ? "Checking…" : "Enter"}</button>
+              <button className="btn-pri blue" onClick={handlePin}>Enter</button>
             </div>
           </div>
         </div>

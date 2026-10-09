@@ -1,0 +1,13 @@
+# Connection recovery, 2026-10-09
+
+Vercel automatically deployed commit `5214624` while Firebase Hosting was correctly paused. That frontend reads `codeInventory` and calls the new `tracker` function. Live Firestore still runs the legacy rules, which deny `codeInventory`, the collection is empty, and the Cloud Functions API is disabled. This produced `Missing or insufficient permissions` and incorrectly displayed an empty October drop. The compatible Firebase Hosting page confirmed the original data is intact (50 codes, 33 available at inspection).
+
+The production recovery restores the client compatible with the existing deployed rules, preserves the current PIN and all code records, and retains the safe timestamp and CSV helpers. It removes browser-driven automatic code deletion and waits for a confirmed transaction before revealing a claimed voucher. Failed first loads now say that codes could not be loaded rather than claiming the month is empty.
+
+`npm run build` now blocks a frontend importing Firebase Functions unless `SECURITY_BACKEND_READY=true`. This check runs on Vercel as well as GitHub, so the server-dependent frontend cannot be automatically published before backend readiness is confirmed.
+
+The server security implementation remains in `functions/` and `firestore.rules`, but is not live. The secured frontend remains available in commit `5214624`. When billing and backend prerequisites are ready, deploy the functions and rules, migrate inventory, restore `src/App.jsx` from that commit, and set `SECURITY_BACKEND_READY=true` in Vercel and the GitHub repository only after verifying the backend. Publish the secured frontend in the same maintenance window, retaining the failed-load display fix. Do not deploy the new rules while the compatibility client is still serving staff.
+
+The compatibility client uses the prior browser PIN and anonymous Firestore access. Those legacy security limitations remain until the coordinated server rollout; this recovery restores service and does not claim that server-enforced admin access is active. No production claim, deletion, PIN change, or database mutation was performed to verify the fix.
+
+Recovery checks passed: lint, production build, 16 unit tests and 19 local emulator integration tests. The integration suite checks both the staged secure backend and the compatible client's competing-claim behavior. Live verification uses read-only page loading and code counts.

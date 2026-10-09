@@ -1,6 +1,6 @@
 # Security fix verification
 
-Implemented and verified locally. Production rollout is pending: the connected Firebase credentials have expired, and live rules, database edition, service-account permissions and deployed functions have not been verified or changed.
+Implemented and verified locally. Production rollout is pending. After reconnecting Firebase on 2026-10-09, live legacy rules were verified, the new inventory was found empty, and the Cloud Functions API was found disabled. The production frontend is temporarily restored to compatibility with that existing setup; see [connection-recovery.md](connection-recovery.md). Server-enforced admin access is not yet active.
 
 | Finding | Change | Evidence |
 | --- | --- | --- |

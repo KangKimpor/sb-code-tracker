@@ -36,5 +36,5 @@ export default [
       ],
     },
   },
-  { files: ['functions/**/*.js', '**/*.test.js'], languageOptions: { globals: globals.node } },
+  { files: ['functions/**/*.js', 'scripts/**/*.js', '**/*.test.js'], languageOptions: { globals: globals.node } },
 ]

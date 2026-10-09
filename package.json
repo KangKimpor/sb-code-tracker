@@ -8,10 +8,10 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/check-backend-readiness.js && vite build",
     "lint": "eslint .",
-    "test": "node --test src/*.test.js && npm --prefix functions test",
-    "test:security": "npx --yes firebase-tools@15.33.0 emulators:exec --only firestore,auth --project demo-sb-code-tracker \"node --test functions/security.emulator.test.js\"",
+    "test": "node --test src/*.test.js scripts/*.test.js && npm --prefix functions test",
+    "test:security": "npx --yes firebase-tools@15.33.0 emulators:exec --only firestore,auth --project demo-sb-code-tracker \"node --test --test-concurrency=1 functions/security.emulator.test.js functions/legacy-claim.emulator.test.js\"",
     "preview": "vite preview"
   },
   "dependencies": {
