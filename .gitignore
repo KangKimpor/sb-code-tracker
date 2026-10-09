@@ -19,6 +19,7 @@ dist-ssr
 .env.*.local
 .firebase/
 .vercel/
+.security-tools/
 
 # Editor directories and files
 .vscode/*

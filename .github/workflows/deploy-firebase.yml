@@ -24,7 +24,6 @@ jobs:
       VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
       VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
       VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
-      VITE_ADMIN_PIN: ${{ secrets.VITE_ADMIN_PIN }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -33,11 +32,22 @@ jobs:
           cache: npm
       - name: Check required build settings
         run: |
-          node --input-type=module -e 'for (const key of ["VITE_FIREBASE_API_KEY", "VITE_FIREBASE_AUTH_DOMAIN", "VITE_FIREBASE_PROJECT_ID", "VITE_FIREBASE_APP_ID", "VITE_ADMIN_PIN"]) if (!process.env[key]) throw new Error(`Missing ${key}`)'
+          node --input-type=module -e 'for (const key of ["VITE_FIREBASE_API_KEY", "VITE_FIREBASE_AUTH_DOMAIN", "VITE_FIREBASE_PROJECT_ID", "VITE_FIREBASE_APP_ID"]) if (!process.env[key]) throw new Error(`Missing ${key}`)'
       - run: npm ci
+      - run: npm ci --prefix functions
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: 21
       - run: npm run lint
+      - run: npm test
+      - run: npm run test:security
       - run: npm run build
+      - name: Report pending security rollout
+        if: vars.SECURITY_BACKEND_READY != 'true'
+        run: echo "::notice::Hosting deployment is paused until the server PIN, backend, rules and inventory migration are ready."
       - uses: FirebaseExtended/action-hosting-deploy@7c850a480ce753f4f06f010801fc5a43787740bb # v0
+        if: vars.SECURITY_BACKEND_READY == 'true'
         with:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           projectId: sb-code-tracker
