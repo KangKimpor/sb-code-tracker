@@ -40,7 +40,7 @@ test("staff can read bounded safe inventory but cannot enumerate raw voucher val
   assert.equal(JSON.stringify(inventory.docs[0].data()).includes("VOUCHER-SECRET"), false);
   await assertFails(getDocs(collection(staff, "codeInventory")));
   await assertFails(getDocs(query(collection(staff, "codeInventory"), limit(2001))));
-  for (const path of ["codes/current", "activityLog/entry", "releaseHistory/entry", "topupRequests/entry", "_rateLimits/entry", "_requestCooldowns/entry"]) await assertFails(getDoc(doc(staff, path)));
+  for (const path of ["codes/current", "activityLog/entry", "releaseHistory/entry", "topupRequests/entry", "_rateLimits/entry", "_requestCooldowns/entry", "_telegramOperations/entry"]) await assertFails(getDoc(doc(staff, path)));
 });
 test("private reads require a valid, unexpired server admin claim", async () => {
   for (const claims of [{}, { adminUntil: 0 }, { adminUntil: "99999999999" }]) {
@@ -53,7 +53,7 @@ test("private reads require a valid, unexpired server admin claim", async () => 
 test("direct client writes and forged audit/history records are denied even for admins", async () => {
   for (const context of [env.unauthenticatedContext(), env.authenticatedContext("admin", adminAuth.token)]) {
     const client = context.firestore();
-    for (const name of ["codes", "codeInventory", "activityLog", "releaseHistory", "topupRequests", "_rateLimits", "_requestCooldowns"]) {
+    for (const name of ["codes", "codeInventory", "activityLog", "releaseHistory", "topupRequests", "_rateLimits", "_requestCooldowns", "_telegramOperations"]) {
       await assertFails(setDoc(doc(client, name, "forged"), { code: "FORGED", takenAt: { toString: {} } }));
     }
     await assertFails(updateDoc(doc(client, "codes/current"), { status: "taken", takenBy: "Imposter" }));

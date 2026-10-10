@@ -20,6 +20,10 @@ dist-ssr
 .firebase/
 .vercel/
 .security-tools/
+.venv/
+__pycache__/
+*.pyc
+*service-account*.json
 
 # Editor directories and files
 .vscode/*

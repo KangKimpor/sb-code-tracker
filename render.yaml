@@ -1,0 +1,30 @@
+# Dedicated tracker bot. The existing group-chat bot remains a separate service.
+services:
+  - type: web
+    name: singbuild-tracker-bot
+    runtime: python
+    plan: free
+    branch: master
+    buildCommand: pip install -r telegram_bot/requirements.txt
+    startCommand: python telegram_bot/bot.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.14
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        value: SingBuildBot
+      - key: ADMIN_PIN
+        sync: false
+      - key: ADMIN_USER_IDS
+        sync: false
+      - key: WEBHOOK_SECRET
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        value: sb-code-tracker
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /etc/secrets/tracker-service-account.json
+      - key: TRACKER_APP_URL
+        value: https://sb-code-tracker.web.app
