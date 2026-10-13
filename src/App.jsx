@@ -776,6 +776,64 @@ const styles = `
     box-shadow: none; cursor: not-allowed;
   }
 
+  /* ─── LIQUID GLASS BUTTON ─── */
+  /* A rounded button of green glass, used by the Take modal's "Confirm & Reveal". Layers, bottom
+     to top: a pale mint body, a radial glow in the app green that thins out toward both
+     ends, a soft light across the top, and a lighter green rim that only shows along the
+     top and bottom (the inset crescents taper to nothing at the ends), all inside a white
+     outer ring. Opt in with "btn-pri btn-glass". Do not also add .green: its hover and
+     active rules repaint the background and would flatten the glass. */
+  .btn-pri.btn-glass {
+    --glass-rim: color-mix(in srgb, var(--green) 72%, #fff);
+    --glass-lift: 0 5px 14px -5px color-mix(in srgb, var(--green) 70%, transparent);
+    border: none; border-radius: var(--r-sm);
+    text-wrap: balance;
+    letter-spacing: -0.2px;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(10,84,36,0.55), 0 0 10px rgba(10,84,36,0.22);
+    background: var(--green);   /* fallback where color-mix is unsupported */
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.12) 48%, rgba(255,255,255,0) 100%),
+      radial-gradient(ellipse 64% 150% at 50% 50%,
+        var(--green) 0%,
+        color-mix(in srgb, var(--green) 84%, transparent) 36%,
+        color-mix(in srgb, var(--green) 40%, transparent) 72%,
+        color-mix(in srgb, var(--green) 6%, transparent) 100%),
+      linear-gradient(180deg, #fff, var(--green-light));
+    box-shadow:
+      inset 0 2px 0 -0.5px var(--glass-rim),
+      inset 0 -2px 0 -0.5px var(--glass-rim),
+      inset 0 0 0 3px rgba(255,255,255,0.32),
+      inset 0 1px 8px rgba(255,255,255,0.7),
+      inset 0 -6px 10px -4px rgba(255,255,255,0.45),
+      0 0 0 1px color-mix(in srgb, var(--green) 14%, transparent),
+      var(--glass-lift);
+    transition: transform 0.4s var(--ease-spring), box-shadow 0.25s ease, filter 0.25s ease;
+  }
+  @media (hover: hover) {
+    .btn-pri.btn-glass:hover:not(:disabled) {
+      --glass-lift: 0 7px 18px -5px color-mix(in srgb, var(--green) 80%, transparent);
+      filter: saturate(1.08) brightness(1.03);
+    }
+  }
+  .btn-pri.btn-glass:active:not(:disabled) { transform: scale(0.96); filter: saturate(1.2); }
+  /* Disabled stays what the rest of the app does: a flat grey fill, never a fade. */
+  .btn-pri.btn-glass:disabled {
+    background: var(--disabled-bg); color: var(--disabled-text);
+    text-shadow: none; box-shadow: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .btn-pri.btn-glass { transition: box-shadow 0.12s ease; }
+  }
+  /* High-contrast preference: drop the glass for the solid fill the app already uses
+     wherever white text sits on green (4.5:1 or better). */
+  @media (prefers-contrast: more) {
+    .btn-pri.btn-glass:not(:disabled) {
+      background: var(--green-dark);
+      box-shadow: none; text-shadow: none;
+    }
+  }
+
   /* ─── CODE MANAGER: grouped iOS-style list ─── */
   /* Apple settings pattern: a small uppercase label sits above a group, the group itself
      is one opaque surface with hairline dividers between rows and no border around it.
@@ -2599,9 +2657,9 @@ export default function App() {
                 <div className="m-actions">
                   <button className="btn-sec"
                     onClick={() => { setTakeModal(null); setStaffName(""); setTakeError(""); }}>Cancel</button>
-                  <button className="btn-pri green" disabled={!staffName.trim()}
+                  <button className="btn-pri btn-glass" disabled={!staffName.trim()}
                     onClick={() => staffName.trim() && takeCode(takeModal.id, staffName.trim())}>
-                    Confirm & Reveal
+                    Claim
                   </button>
                 </div>
               </>
