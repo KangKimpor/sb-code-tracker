@@ -2,7 +2,6 @@
 import { useState, useEffect, useRef } from "react";
 import pillArtwork from "./assets/pchum-ben-pill.webp";
 import pillFont from "./assets/dm-sans-bold.woff2";
-import headerRing from "./assets/header-ring-hq.webp";
 import { suggestDeviceName } from "./deviceNames";
 import { toMs, csvSafe } from "./security.js";
 import { unavailableInventory } from "./codeLoadState.js";
@@ -241,13 +240,6 @@ const styles = `
   .logo-wrap:active { transform: scale(0.97); background: var(--track-press); border-radius: 12px; }
 
   .logo-img { width: 100%; height: auto; object-fit: contain; display: block; }
-
-  .header-capsules {
-    width: 64px; height: 64px; flex-shrink: 0; overflow: hidden; border-radius: 50%;
-    pointer-events: none; background: var(--bg) url('/header-ring-poster.webp') center / cover no-repeat;
-  }
-  .header-capsules img { display: block; width: 100%; height: 100%; object-fit: cover; }
-  .header-capsules img[hidden] { display: none; }
 
   .brand-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; }
   .brand-meta:empty { display: none; }
@@ -575,7 +567,6 @@ const styles = `
                calc(36px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
     }
     .topbar { gap: 11px; padding: 18px 2px 16px; }
-    .header-capsules { width: 56px; height: 56px; }
     .hero-sub { font-size: 14px; }
     .seg { font-size: 13.5px; padding: 8px 4px; }
     .t-row { padding: 14px 15px; gap: 10px; }
@@ -2414,14 +2405,6 @@ export default function App() {
           >
             <img src="/singbuild-logo.png" alt="Singbuild" width="682" height="185" className="logo-img" draggable="false" />
           </button>
-          <div className="header-capsules" aria-hidden="true">
-            <picture>
-              <source media="(prefers-reduced-motion: reduce)" srcSet="/header-ring-poster.webp" />
-              {/* eslint-disable-next-line react/no-unknown-property -- React 18 forwards this native attribute in lowercase. */}
-              <img src={headerRing} alt="" width="256" height="256" decoding="async" fetchpriority="low"
-                onError={event => { event.currentTarget.hidden = true; }} />
-            </picture>
-          </div>
           <div className="brand-meta">
             {isAdmin && (
               <span className="pill admin">Admin</span>
