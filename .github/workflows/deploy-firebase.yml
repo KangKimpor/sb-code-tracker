@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SECURITY_BACKEND_READY: ${{ vars.SECURITY_BACKEND_READY }}
+      VITE_ADMIN_PIN: ${{ secrets.VITE_ADMIN_PIN }}
       VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
       VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
       VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
@@ -33,7 +34,7 @@ jobs:
           cache: npm
       - name: Check required build settings
         run: |
-          node --input-type=module -e 'for (const key of ["VITE_FIREBASE_API_KEY", "VITE_FIREBASE_AUTH_DOMAIN", "VITE_FIREBASE_PROJECT_ID", "VITE_FIREBASE_APP_ID"]) if (!process.env[key]) throw new Error(`Missing ${key}`)'
+          node --input-type=module -e 'for (const key of ["VITE_FIREBASE_API_KEY", "VITE_FIREBASE_AUTH_DOMAIN", "VITE_FIREBASE_PROJECT_ID", "VITE_FIREBASE_APP_ID", "VITE_ADMIN_PIN"]) if (!process.env[key]) throw new Error(`Missing ${key}`)'
       - run: npm ci
       - run: npm ci --prefix functions
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
