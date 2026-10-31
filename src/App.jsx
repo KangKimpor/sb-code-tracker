@@ -1,6 +1,6 @@
 // Version 1.3.0
 import { useState, useEffect, useRef } from "react";
-import pillArtwork from "./assets/pchum-ben-pill.webp";
+
 import pillFont from "./assets/dm-sans-bold.woff2";
 import { suggestDeviceName } from "./deviceNames";
 import { toMs, csvSafe } from "./security.js";
@@ -286,7 +286,7 @@ const styles = `
   .hero-headline {
     container-type: inline-size; aspect-ratio: 1366 / 340;
     display: flex; align-items: center; justify-content: center;
-    background: #fcfaf6 url('${pillArtwork}') center / 100% 100% no-repeat;
+    background: #ffffff;
     border-radius: 999px; box-shadow: var(--sh);
   }
   .hero-details {
